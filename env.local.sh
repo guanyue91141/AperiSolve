@@ -25,7 +25,7 @@ export PROJECT_VERSION=3.7.12-native
 
 # Canonical origin for absolute links in pages. Empty falls back to the request's
 # Host header (see aperisolve/app.py:_base_url).
-export SITE_BASE_URL="${SITE_BASE_URL:-https://192.168.204.138:${FLASK_PORT:-5000}}"
+export SITE_BASE_URL="${SITE_BASE_URL:-http://192.168.204.138:${FLASK_PORT:-5000}}"
 
 # Security: the service is unauthenticated and runs 16 third-party binaries over
 # uploaded files, so sweep submissions and results after 1 day rather than the

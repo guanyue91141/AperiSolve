@@ -1,5 +1,4 @@
 .omni-history-button { white-space: nowrap; }
-.omni-home-actions { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
 #drag-msg { overflow-wrap: anywhere; }
 .omni-history {
   width: min(1100px, calc(100vw - 2rem));
@@ -48,6 +47,5 @@
 @media (max-width: 600px) {
   .omni-history { width: calc(100vw - 1rem); padding: .8rem; max-height: 92vh; }
   .omni-task summary, .omni-task-body { padding: .75rem; }
-  .omni-home-actions { width: 100%; }
-  .omni-home-actions .btn { flex: 1 1 auto; }
+  .omni-history-button { width: 100%; }
 }

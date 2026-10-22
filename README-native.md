@@ -8,24 +8,11 @@ running natively on this machine. Four local modifications are applied
 
 ```bash
 ./setup.sh     # once: venv, deps, gettext catalogs, SQLite schema, tool probe
-./start.sh     # redis -> rq worker -> HTTPS Flask, then open https://127.0.0.1:5000
+./start.sh     # redis -> rq worker -> flask, then open http://127.0.0.1:5000
 ./stop.sh      # tear down
 ```
 
 Logs land in `logs/`. Env vars are in `env.local.sh` (`source` it if running by hand).
-
-## Local HTTPS certificate
-
-`start.sh` creates a private local CA and a server certificate for localhost and the
-configured LAN addresses in `data/tls/`. The CA private key stays on this machine.
-The homepage offers **下载 HTTPS 证书** to download only the public CA certificate.
-
-On Windows, the first HTTPS visit may show a certificate warning. Continue to the
-homepage once, download the certificate, open it, and install it for the current user
-under **Trusted Root Certification Authorities**. Then reopen
-`https://<server-LAN-IP>:5000/`; the browser should trust the server certificate.
-If the server's LAN IP changes, restart the app so it can issue a leaf certificate
-with the new address. The root CA certificate remains the same.
 
 ## 全能模式（Grok CLI）
 
@@ -67,9 +54,9 @@ CLI 正常退出但没有结果文件显示“未找到 flag”。
 `start.sh` prints every reachable address on success. On this host that is:
 
 ```
-local:  https://127.0.0.1:5000/
-LAN:    https://192.168.204.138:5000/      eth0, the 192.168.204.0/24 segment
-LAN:    https://10.0.3.1:5000/            lxcbr0 bridge
+local:  http://127.0.0.1:5000/
+LAN:    http://192.168.204.138:5000/      eth0, the 192.168.204.0/24 segment
+LAN:    http://10.0.3.1:5000/            lxcbr0 bridge
 ```
 
 ## Network exposure

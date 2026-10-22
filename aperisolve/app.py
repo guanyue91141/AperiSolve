@@ -218,28 +218,6 @@ def _register_page_routes(app: Flask) -> None:
         """Serve the Google Ads required file."""
         return GOOGLE_ADS_TXT
 
-    @app.route("/local-root-ca.crt")
-    def local_root_certificate() -> Response:
-        """Download the public CA certificate used by this local HTTPS server."""
-        tls_dir = Path(
-            os.environ.get(
-                "LOCAL_TLS_DIR",
-                str(Path(__file__).resolve().parent.parent / "data" / "tls"),
-            ),
-        ).expanduser()
-        certificate = tls_dir / "rootCA.crt"
-        if not certificate.is_file():
-            abort(503, description="Local HTTPS certificate has not been created yet.")
-        response = send_file(
-            certificate,
-            mimetype="application/x-x509-ca-cert",
-            as_attachment=True,
-            download_name="AperiSolve-Local-Root-CA.crt",
-            max_age=0,
-        )
-        response.headers["Cache-Control"] = "no-store"
-        return response
-
     @app.route("/robots.txt")
     def robots_txt() -> Response:
         """Serve crawler directives; API endpoints are not for indexing."""
