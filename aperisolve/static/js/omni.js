@@ -31,24 +31,6 @@
   const rows = new Map();
 
   const api = (id = "", action = "") => `/api/omni/tasks${id ? `/${id}` : ""}${action ? `/${action}` : ""}`;
-  async function copyText(text) {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-        return;
-      }
-    } catch {}
-    const field = document.createElement("textarea");
-    field.value = text;
-    field.setAttribute("readonly", "");
-    field.style.position = "fixed";
-    field.style.opacity = "0";
-    document.body.append(field);
-    field.select();
-    const copied = document.execCommand("copy");
-    field.remove();
-    if (!copied) throw new Error("clipboard copy unavailable");
-  }
   async function json(url, options) {
     const response = await fetch(url, {cache: "no-store", ...options});
     const data = await response.json().catch(() => ({}));
@@ -71,7 +53,7 @@
     document.getElementById("omni-instructions-group").hidden = !mode.checked;
     if (!mode.checked && input.files.length > 1) input.value = "";
     if (!input.files.length) dragMessage.textContent = mode.checked
-      ? "📂 文件可选：拖放多个文件到这里，或仅填写解题说明创建任务"
+      ? "📂 文件可选：拖放多个文件到这里"
       : initialDragMessage;
     submit.innerHTML = mode.checked ? '<i class="fa fa-play me-2" aria-hidden="true"></i>创建任务' : initialSubmit;
     browse.innerHTML = mode.checked ? '<i class="fa fa-folder-open me-2" aria-hidden="true"></i>选择多个文件' : initialBrowse;
@@ -114,7 +96,7 @@
         if (xhr.status === 202 && result.task_id) {
           bar.style.width = "100%";
           bar.textContent = "任务已创建";
-          notify(`任务已创建（${result.task_id.slice(0, 8)}），请点击左上角“任务记录”查看进度。`);
+          notify(`任务已创建（${result.task_id.slice(0, 8)}），请点击左上角“更多”查看进度。`);
           input.value = "";
           syncMode();
           if (dialog.open) loadTask(result.task_id, true);
@@ -124,7 +106,7 @@
         }
       };
       xhr.onerror = () => {
-        notify("上传连接中断。请先查看任务记录，确认是否已创建任务，再决定是否重试。", true);
+        notify("上传连接中断。请先点击“更多”查看，确认是否已创建任务，再决定是否重试。", true);
         progress.classList.add("d-none");
       };
       xhr.onloadend = () => setBusy(false);
@@ -148,7 +130,7 @@
     node.innerHTML = `<div class="omni-task-header"><div class="omni-task-heading"><span class="omni-task-title"></span><span class="omni-task-status"></span></div>
       <button type="button" class="btn btn-sm btn-outline-light omni-expand" aria-expanded="false">展开</button></div>
       <span class="omni-task-meta"></span><span class="omni-task-hint"></span>
-      <span class="omni-task-flag-group"><code class="omni-task-flag"></code><button type="button" class="btn btn-sm btn-outline-light omni-copy-flag" hidden>复制</button></span>
+      <span class="omni-task-flag-group"><code class="omni-task-flag"></code></span>
       <div class="omni-task-body" hidden><strong>解题说明</strong><pre class="omni-instructions"></pre>
       <p class="omni-task-error" role="status"></p><div class="omni-task-actions">
       <button type="button" class="btn btn-outline-danger omni-stop">停止任务</button>
@@ -178,19 +160,6 @@
       });
       loadPreview(row);
     }));
-    const copyFlag = node.querySelector(".omni-copy-flag");
-    copyFlag.addEventListener("click", async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      try {
-        await copyText(row.task.flag);
-        copyFlag.textContent = "已复制";
-        setTimeout(() => { copyFlag.textContent = "复制"; }, 1500);
-      } catch {
-        copyFlag.textContent = "复制失败";
-        setTimeout(() => { copyFlag.textContent = "复制"; }, 2000);
-      }
-    });
     row.stop.addEventListener("click", async () => {
       row.stop.disabled = true;
       row.stop.textContent = "正在停止…";
@@ -216,7 +185,6 @@
     setText(row.node.querySelector(".omni-task-meta"), `${task.id.slice(0, 8)} · ${new Date(task.created_at * 1000).toLocaleString()} · ${duration(task)}`);
     setText(row.node.querySelector(".omni-task-hint"), task.instructions.slice(0, 150) || "未填写解题说明");
     setText(row.node.querySelector(".omni-task-flag"), task.flag || "");
-    row.node.querySelector(".omni-copy-flag").hidden = !task.flag;
     setText(row.node.querySelector(".omni-instructions"), task.instructions || "（无）");
     setText(row.node.querySelector(".omni-task-error"), task.error || "");
     row.stop.hidden = !active.has(task.status);
@@ -334,7 +302,7 @@
       const result = await json(`${api()}?page=${page}`);
       if (!dialog.open || current !== generation) return;
       taskTotal = result.total;
-      setText(historyMessage, result.total ? "" : "暂无全能任务，请在首页勾选全能模式后提交。");
+      setText(historyMessage, result.total ? "" : "暂无全能任务，请在首页勾选 ALL mode 后提交。");
       const ids = new Set(result.tasks.map((task) => task.id));
       for (const [id, row] of rows) {
         if (!ids.has(id)) { row.node.remove(); rows.delete(id); }
