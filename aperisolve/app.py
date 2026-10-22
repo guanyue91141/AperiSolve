@@ -8,6 +8,7 @@ import shutil
 import time
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
+from io import BytesIO
 from urllib.parse import quote_from_bytes
 from pathlib import Path
 from typing import Any, cast
@@ -19,6 +20,7 @@ from flask_babel import gettext as _
 from redis import Redis
 from redis.exceptions import RedisError
 from rq import Queue
+from PIL import Image as PillowImage
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from werkzeug.wrappers.response import Response as WerkzeugResponse
 
@@ -605,6 +607,79 @@ def _register_data_routes(app: Flask) -> None:
         response.headers["Cache-Control"] = "private, max-age=30"
         return response
 
+    @app.route("/gif-frames/<hash_val>", methods=["GET"])
+    @limiter.limit("60 per minute", exempt_when=_is_local_request)
+    def get_gif_frames(hash_val: str) -> Response:
+        """Return frame count for an animated GIF submission."""
+        submission = Submission.query.get_or_404(hash_val)
+        image = Image.query.get_or_404(submission.image_hash)
+        input_path = Path(image.file)
+        if not input_path.is_file():
+            abort(404, description="Original file not found.")
+        try:
+            with PillowImage.open(input_path) as source:
+                frame_count = getattr(source, "n_frames", 1) if source.format == "GIF" else 0
+        except (OSError, ValueError, PillowImage.DecompressionBombError):
+            frame_count = 0
+        response = jsonify({"frame_count": frame_count})
+        response.headers["Cache-Control"] = "private, max-age=300"
+        return response
+
+    @app.route("/gif-frame-preview/<hash_val>/<int:frame_index>", methods=["GET"])
+    @limiter.limit("600 per minute", exempt_when=_is_local_request)
+    def get_gif_frame_preview(hash_val: str, frame_index: int) -> Response:
+        """Render one small PNG preview from an uploaded animated GIF."""
+        submission = Submission.query.get_or_404(hash_val)
+        image = Image.query.get_or_404(submission.image_hash)
+        input_path = Path(image.file)
+        if not input_path.is_file():
+            abort(404, description="Original file not found.")
+        try:
+            with PillowImage.open(input_path) as source:
+                if source.format != "GIF" or frame_index >= getattr(source, "n_frames", 1):
+                    abort(404, description="GIF frame not found.")
+                source.seek(frame_index)
+                preview = source.convert("RGBA")
+                preview.thumbnail((112, 84), PillowImage.Resampling.LANCZOS)
+                buffer = BytesIO()
+                preview.save(buffer, format="PNG", optimize=True)
+        except (OSError, ValueError, EOFError, PillowImage.DecompressionBombError):
+            abort(422, description="GIF frame could not be decoded.")
+        buffer.seek(0)
+        response = send_file(buffer, mimetype="image/png", max_age=86400)
+        response.headers["Cache-Control"] = "private, max-age=86400"
+        return response
+
+    @app.route("/decomposer-frame/<hash_val>/<int:frame_index>", methods=["POST"])
+    @limiter.limit("60 per minute", exempt_when=_is_local_request)
+    def decompose_gif_frame(hash_val: str, frame_index: int) -> tuple[Response, int] | Response:
+        """Build bit-plane images for one GIF frame selected in the result UI."""
+        submission = Submission.query.get_or_404(hash_val)
+        if submission.status != "completed":
+            return jsonify({"error": _("Results not ready yet...")}), 425
+        image = Image.query.get_or_404(submission.image_hash)
+        input_path = Path(image.file)
+        if not input_path.is_file():
+            abort(404, description="Original file not found.")
+        try:
+            with PillowImage.open(input_path) as source:
+                if source.format != "GIF":
+                    abort(404, description="Animated GIF not found.")
+                frame_count = getattr(source, "n_frames", 1)
+        except (OSError, ValueError, PillowImage.DecompressionBombError):
+            abort(422, description="GIF could not be decoded.")
+        if frame_index < 0 or frame_index >= frame_count:
+            abort(404, description="GIF frame not found.")
+
+        from .analyzers.decomposer import DecomposerAnalyzer
+
+        output_dir = RESULT_FOLDER / str(image.hash) / str(submission.hash)
+        result = DecomposerAnalyzer(input_path, output_dir).get_frame_results(frame_index)
+        status_code = HTTPStatus.OK if result.get("status") == "ok" else HTTPStatus.UNPROCESSABLE_ENTITY
+        response = jsonify(result)
+        response.headers["Cache-Control"] = "no-store"
+        return response, status_code
+
     @app.route("/hex-preview/<hash_val>", methods=["GET"])
     @limiter.limit("60 per minute", exempt_when=_is_local_request)
     def get_hex_preview(hash_val: str) -> Response:
@@ -759,20 +834,28 @@ def _register_data_routes(app: Flask) -> None:
         submission = Submission.query.get_or_404(hash_val)
         image = Image.query.get_or_404(submission.image_hash)
         result_path = RESULT_FOLDER / str(image.hash) / str(submission.hash) / "results.json"
-        # Result JSON is retained across deployments. Populate the newly added
-        # byte-structure analyzer the first time a completed legacy result is
-        # opened, so users do not need to upload the same file again.
+        # Result JSON is retained across deployments. Populate newly added
+        # analyzers the first time a completed legacy result is opened, so
+        # users do not need to upload the same file again.
         if submission.status == "completed" and result_path.is_file():
             try:
                 cached_results = json.loads(result_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 cached_results = {}
-            if not isinstance(cached_results, dict) or "file_anomalies" not in cached_results:
-                input_path = Path(image.file)
-                if input_path.is_file():
+            cached_results = cached_results if isinstance(cached_results, dict) else {}
+            input_path = Path(image.file)
+            if input_path.is_file():
+                if "file_anomalies" not in cached_results:
                     from .analyzers.file_anomalies import FileAnomaliesAnalyzer
 
                     FileAnomaliesAnalyzer(input_path, result_path.parent).analyze()
+                if (
+                    "base64_images" not in cached_results
+                    and detect_file_type(input_path).kind == "image"
+                ):
+                    from .analyzers.base64_images import Base64ImagesAnalyzer
+
+                    Base64ImagesAnalyzer(input_path, result_path.parent).analyze()
         return _build_result_response(result_path)
 
     @app.route("/download/<hash_val>/<tool>")

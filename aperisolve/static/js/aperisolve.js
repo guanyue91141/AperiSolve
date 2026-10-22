@@ -2,6 +2,7 @@
 // list is only a fallback for pages served without the injection.
 const TOOL_ORDER = window.TOOL_ORDER || [
   "decomposer",
+  "base64_images",
   "spectrogram",
   "color_remapping",
   "file",
@@ -530,6 +531,7 @@ function analyzerTitle(tool) {
   }
   const knownTitles = {
     binwalk: "Binwalk (embedded file and signature scanning)",
+    base64_images: "Base64 image detection (embedded images)",
     color_remapping: "Color remapping",
     decomposer: "Decomposer (image bit-plane analysis)",
     exiftool: "ExifTool metadata",
@@ -1147,6 +1149,104 @@ document.addEventListener("click", async (event) => {
   }
 });
 
+function renderDecomposerFrameImages(images) {
+  const preferredOrder = ["Superimposed", "Red", "Green", "Blue", "Alpha", "Grayscale"];
+  const channels = [
+    ...preferredOrder.filter((channel) => Array.isArray(images?.[channel])),
+    ...Object.keys(images || {}).filter((channel) => !preferredOrder.includes(channel)),
+  ];
+  return channels.map((channel) => {
+    const heading = channel === "Superimposed" ? "" : `<h3>${t(channel)}</h3>`;
+    const planes = (images[channel] || []).map((src, bit) =>
+      `<div class="results_img"><img src="${escapeHtml(src)}" alt="Decomposer ${escapeHtml(channel)} bit ${bit}" loading="lazy" decoding="async"></div>`
+    ).join("");
+    return `${heading}${planes}`;
+  }).join("");
+}
+
+async function loadGifFrameSelector(analyzer, submissionHash) {
+  const picker = analyzer.querySelector(".gif-frame-picker");
+  if (!picker || picker.dataset.loading === "true" || picker.dataset.loaded === "true") return;
+  picker.dataset.loading = "true";
+  try {
+    const response = await fetch(`/gif-frames/${encodeURIComponent(submissionHash)}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const { frame_count: frameCount } = await response.json();
+    if (!Number.isInteger(frameCount) || frameCount < 2) {
+      picker.dataset.loaded = "true";
+      return;
+    }
+
+    picker.hidden = false;
+    picker.dataset.frameCount = String(frameCount);
+    const frames = picker.querySelector(".gif-frame-list");
+    const fragment = document.createDocumentFragment();
+    for (let index = 0; index < frameCount; index++) {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = `gif-frame-option${index === 0 ? " is-active" : ""}`;
+      option.dataset.frameIndex = String(index);
+      option.setAttribute("aria-pressed", index === 0 ? "true" : "false");
+      option.setAttribute("aria-label", `选择第 ${index + 1} 帧`);
+      const preview = document.createElement("img");
+      preview.src = `/gif-frame-preview/${encodeURIComponent(submissionHash)}/${index}`;
+      preview.alt = "";
+      preview.loading = "lazy";
+      preview.decoding = "async";
+      const label = document.createElement("span");
+      label.textContent = String(index + 1);
+      option.append(preview, label);
+      fragment.appendChild(option);
+    }
+    frames.replaceChildren(fragment);
+    picker.querySelector(".gif-frame-position").textContent = `第 1 / ${frameCount} 帧`;
+    picker.dataset.loaded = "true";
+  } catch (error) {
+    console.error("Failed to load GIF frame selector:", error);
+  } finally {
+    delete picker.dataset.loading;
+  }
+}
+
+document.addEventListener("click", async (event) => {
+  const option = event.target.closest(".gif-frame-option");
+  if (!option || option.disabled) return;
+  const picker = option.closest(".gif-frame-picker");
+  const analyzer = option.closest(".a-decomposer");
+  const selectedIndex = Number(option.dataset.frameIndex);
+  if (!picker || !analyzer || !Number.isInteger(selectedIndex)) return;
+  if (option.classList.contains("is-active")) return;
+
+  const submissionHash = analyzer.dataset.submissionHash;
+  const frameCount = Number(picker.dataset.frameCount);
+  const position = picker.querySelector(".gif-frame-position");
+  const results = analyzer.querySelector(".decomposer-frame-results");
+  picker.setAttribute("aria-busy", "true");
+  picker.querySelectorAll(".gif-frame-option").forEach((button) => { button.disabled = true; });
+  position.textContent = `正在加载第 ${selectedIndex + 1} 帧…`;
+  try {
+    const response = await fetch(
+      `/decomposer-frame/${encodeURIComponent(submissionHash)}/${selectedIndex}`,
+      { method: "POST" }
+    );
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    results.innerHTML = renderDecomposerFrameImages(data.images);
+    picker.querySelectorAll(".gif-frame-option").forEach((button) => {
+      const active = Number(button.dataset.frameIndex) === selectedIndex;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+    position.textContent = `第 ${selectedIndex + 1} / ${frameCount} 帧`;
+  } catch (error) {
+    console.error("Failed to decompose selected GIF frame:", error);
+    position.textContent = `第 ${selectedIndex + 1} 帧加载失败：${error.message}`;
+  } finally {
+    picker.removeAttribute("aria-busy");
+    picker.querySelectorAll(".gif-frame-option").forEach((button) => { button.disabled = false; });
+  }
+});
+
 function parseResult(result, legacyStringsPreview = null, submissionHash = "") {
   const resultDiv = document.getElementById("result-analyzers");
   resultDiv.innerHTML = "";
@@ -1172,6 +1272,9 @@ function parseResult(result, legacyStringsPreview = null, submissionHash = "") {
     const analyzer = document.createElement("div");
     analyzer.className = `analyzer a-${escapeHtml(tool)}`;
     analyzer.id = `analyzer-${tool}`;
+    if (tool === "decomposer" && submissionHash) {
+      analyzer.dataset.submissionHash = submissionHash;
+    }
     if (twoColumnTools.has(tool)) {
       if (!twoColumnGrid) {
         twoColumnGrid = document.createElement("div");
@@ -1188,9 +1291,23 @@ function parseResult(result, legacyStringsPreview = null, submissionHash = "") {
       ? `<span class="analyzer-badge badge-ok"><i class="fa fa-check"></i> ${t("Success")}</span>`
       : `<span class="analyzer-badge badge-empty"><i class="fa fa-minus"></i> ${t("No result")}</span>`;
     let analyzerHtml = `<div class="analyzer-header"><h2>${analyzerTitle(tool)}</h2>${badge}</div>`;
+    if (tool === "decomposer" && submissionHash) {
+      analyzerHtml += `<section class="gif-frame-picker" hidden aria-label="GIF 帧选择"><div class="gif-frame-picker-heading"><strong>选择帧</strong><span class="gif-frame-position" aria-live="polite"></span></div><div class="gif-frame-list" role="list"></div></section>`;
+    }
 
     // Parse text output
-    if (tool === "strings" && Array.isArray(result[tool]["output"])) {
+    if (tool === "base64_images" && result[tool]["output"] && typeof result[tool]["output"] === "object") {
+      const output = result[tool]["output"];
+      analyzerHtml += `<div class="table-container"><table><tr><td>${t("Images found")}</td><td>${escapeHtml(output.images_found)}</td></tr><tr><td>${t("Detected formats")}</td><td>${escapeHtml(output.formats)}</td></tr></table></div>`;
+      const details = result[tool]["image_details"] || [];
+      if (details.length) {
+        analyzerHtml += `<div class="embedded-image-results">`;
+        for (const image of details) {
+          analyzerHtml += `<figure class="embedded-image-card"><a href="${escapeHtml(image.download)}" target="_blank" rel="noopener"><img src="${escapeHtml(image.preview)}" alt="${escapeHtml(image.format)} embedded Base64 image" loading="lazy" decoding="async"></a><figcaption><strong>${escapeHtml(image.format)} · ${escapeHtml(image.width)}×${escapeHtml(image.height)}</strong><span>${t("Base64 offset")} 0x${Number(image.base64_offset).toString(16).toUpperCase()} · ${t("Decoded image offset")} 0x${Number(image.decoded_image_offset).toString(16).toUpperCase()}</span><a href="${escapeHtml(image.download)}" download>${t("Download extracted image")}</a></figcaption></figure>`;
+        }
+        analyzerHtml += `</div>`;
+      }
+    } else if (tool === "strings" && Array.isArray(result[tool]["output"])) {
       analyzerHtml += renderLegacyStringsOutput(result[tool]["output"], legacyStringsPreview, submissionHash);
       // Keep large files windowed; fetching the entire file here would create
       // tens of thousands of DOM rows and freeze the page.
@@ -1229,7 +1346,7 @@ function parseResult(result, legacyStringsPreview = null, submissionHash = "") {
 
     // Parse images, downloads, ...
     if (result[tool]["status"] === "ok") {
-      if ("images" in result[tool]) {
+      if ("images" in result[tool] && tool !== "base64_images") {
         // Channel labels come from the analyzer's own dict keys. Only the
         // decomposer/color_remapping RGB(A) sets get the canonical
         // Superimposed,Red,Green,Blue,(Alpha) ordering; every other analyzer
@@ -1243,6 +1360,10 @@ function parseResult(result, legacyStringsPreview = null, submissionHash = "") {
           channels = RGBA;
         } else if (imageKeys.length === RGB.length && RGB.every((c) => imageKeys.includes(c))) {
           channels = RGB;
+        }
+
+        if (tool === "decomposer") {
+          analyzerHtml += `<div class="decomposer-frame-results">`;
         }
 
         let title_h3 = "";
@@ -1259,6 +1380,9 @@ function parseResult(result, legacyStringsPreview = null, submissionHash = "") {
               )}' alt='${escapeHtml(tool + " " + channel)}' loading='lazy' decoding='async'/></div>`;
             }
           }
+        }
+        if (tool === "decomposer") {
+          analyzerHtml += `</div>`;
         }
       }
 
@@ -1300,6 +1424,9 @@ function parseResult(result, legacyStringsPreview = null, submissionHash = "") {
     // Assemble once so a result with dozens of images does not repeatedly
     // parse the growing analyzer subtree or restart image requests.
     analyzer.innerHTML = analyzerHtml;
+    if (tool === "decomposer" && submissionHash) {
+      loadGifFrameSelector(analyzer, submissionHash);
+    }
     if (tool === "strings" && result[tool]["output"] && typeof result[tool]["output"] === "object") {
       const list = analyzer.querySelector(".strings-list");
       if (list) {

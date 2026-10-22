@@ -28,7 +28,7 @@ def _error(message: str) -> LoadedImage:
     return LoadedImage(array=None, converted=False, error={"status": "error", "error": message})
 
 
-def load_image_array(path: Path) -> LoadedImage:
+def load_image_array(path: Path, frame_index: int = 0) -> LoadedImage:
     """Load an image as a NumPy array, converting palette images to RGB.
 
     Corrupt/polyglot uploads are expected input, not an exception worth a
@@ -38,6 +38,9 @@ def load_image_array(path: Path) -> LoadedImage:
     """
     try:
         with Image.open(path) as img:
+            if frame_index < 0 or frame_index >= getattr(img, "n_frames", 1):
+                return _error(f"Frame {frame_index + 1} does not exist in this image.")
+            img.seek(frame_index)
             if img.width * img.height > MAX_IMAGE_PIXELS:
                 return _error(
                     f"Image dimensions {img.width}x{img.height} exceed the "
@@ -53,4 +56,6 @@ def load_image_array(path: Path) -> LoadedImage:
         return _error("Pillow cannot decode this file as an image.")
     except Image.DecompressionBombError:
         return _error("Image rejected: decoded size would be a decompression bomb.")
+    except EOFError:
+        return _error(f"Frame {frame_index + 1} could not be decoded.")
     return LoadedImage(array=array, converted=converted, error=None)

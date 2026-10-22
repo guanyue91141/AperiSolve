@@ -109,6 +109,14 @@ def js_catalog() -> dict[str, str]:
         "Binwalk (embedded file and signature scanning)": _(
             "Binwalk (embedded file and signature scanning)",
         ),
+        "Base64 image detection (embedded images)": _(
+            "Base64 image detection (embedded images)",
+        ),
+        "Images found": _("Images found"),
+        "Detected formats": _("Detected formats"),
+        "Base64 offset": _("Base64 offset"),
+        "Decoded image offset": _("Decoded image offset"),
+        "Download extracted image": _("Download extracted image"),
         "Decomposer (image bit-plane analysis)": _(
             "Decomposer (image bit-plane analysis)",
         ),

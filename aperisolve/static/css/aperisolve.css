@@ -1028,6 +1028,38 @@ td {
     min-width: 9.375rem;
 }
 
+.embedded-image-results {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    gap: var(--spacing-md);
+    margin-top: var(--spacing-md);
+}
+
+.embedded-image-card {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    border: 1px solid var(--green-line-soft);
+    border-radius: var(--border-radius);
+    background: rgba(0, 0, 0, 0.18);
+}
+
+.embedded-image-card img {
+    display: block;
+    width: 100%;
+    max-height: 20rem;
+    object-fit: contain;
+    background: #111;
+}
+
+.embedded-image-card figcaption {
+    display: grid;
+    gap: 0.25rem;
+    padding: var(--spacing-sm);
+    overflow-wrap: anywhere;
+    font-size: 0.85rem;
+}
+
 /* Color remapping produces a sequence of equal-sized channel maps. Keep eight
    thumbnails on each desktop row instead of using the generic four-column
    result layout. */
@@ -1036,6 +1068,78 @@ td {
     width: 12.5%;
     min-width: 0;
     padding: var(--spacing-sm);
+}
+
+.gif-frame-picker {
+    margin: var(--spacing-md) 0;
+    padding: var(--spacing-sm);
+    border: 1px solid var(--green-line);
+    border-radius: var(--border-radius);
+    background: rgba(0, 0, 0, 0.18);
+}
+
+.gif-frame-picker-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-sm);
+    color: var(--theme-green);
+}
+
+.gif-frame-position {
+    color: var(--text-dim);
+    font-size: 0.82rem;
+}
+
+.gif-frame-list {
+    display: flex;
+    gap: var(--spacing-sm);
+    overflow-x: auto;
+    padding: 0.15rem 0.1rem 0.5rem;
+    scrollbar-color: rgba(159, 239, 0, 0.35) rgba(0, 0, 0, 0.2);
+}
+
+.gif-frame-option {
+    flex: 0 0 5.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.3rem;
+    color: var(--text-dim);
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(159, 239, 0, 0.16);
+    border-radius: 0.35rem;
+    font-size: 0.75rem;
+}
+
+.gif-frame-option img {
+    width: 100%;
+    height: 4.2rem;
+    object-fit: contain;
+    background: #060a10;
+}
+
+.gif-frame-option:hover,
+.gif-frame-option:focus-visible,
+.gif-frame-option.is-active {
+    color: var(--theme-green);
+    border-color: var(--theme-green);
+    outline: none;
+}
+
+.gif-frame-option:disabled {
+    opacity: 0.65;
+    cursor: wait;
+}
+
+.gif-frame-picker[aria-busy="true"] .gif-frame-position {
+    color: #ffc66d;
+}
+
+.gif-frame-picker[hidden] {
+    display: none;
 }
 
 .a-pcrt .results_img {
