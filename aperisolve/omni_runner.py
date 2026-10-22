@@ -20,6 +20,22 @@ from .omni_store import (
     write_state,
 )
 
+MAX_TOOL_DETAIL_BYTES = 8 * 1024
+
+
+def _compact_tool_value(value: object) -> object:
+    """Keep small tool results; summarize large payloads before writing logs."""
+    encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if len(encoded) <= MAX_TOOL_DETAIL_BYTES:
+        return value
+    summary: dict[str, object] = {"filtered": True, "original_bytes": len(encoded)}
+    if isinstance(value, dict):
+        for key in ("type", "exit_code", "signal", "timed_out", "truncated", "description"):
+            item = value.get(key)
+            if isinstance(item, (str, int, float, bool)) and len(str(item).encode("utf-8")) <= 1024:
+                summary[key] = item
+    return summary
+
 
 def format_event(line: str) -> str:
     """Make ACP text deltas readable while retaining other tool events."""
@@ -41,6 +57,12 @@ def format_event(line: str) -> str:
             return content["text"]
     if isinstance(event.get("text"), str):
         return event["text"] + "\n"
+    if event.get("type") == "tool_call_update":
+        event = event.copy()
+        for key in ("content", "rawOutput"):
+            if key in event:
+                event[key] = _compact_tool_value(event[key])
+        return json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n"
     return line
 
 
