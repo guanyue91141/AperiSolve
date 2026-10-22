@@ -22,9 +22,14 @@
 </script>
 {% endblock %}
 {% block header_actions %}
-<button type="button" class="btn btn-outline-primary omni-history-button" id="omni-history-open" aria-haspopup="dialog" aria-controls="omni-history">
-  <i class="fa-solid fa-list-check me-2" aria-hidden="true"></i>任务记录
-</button>
+<div class="omni-home-actions">
+  <button type="button" class="btn btn-outline-primary omni-history-button" id="omni-history-open" aria-haspopup="dialog" aria-controls="omni-history">
+    <i class="fa-solid fa-list-check me-2" aria-hidden="true"></i>任务记录
+  </button>
+  <a class="btn btn-outline-primary" href="/local-root-ca.crt" download title="下载后导入 Windows 的“受信任的根证书颁发机构”">
+    <i class="fa-solid fa-certificate me-2" aria-hidden="true"></i>下载 HTTPS 证书
+  </a>
+</div>
 {% endblock %}
 {% block body_content %}
 <form id="upload-form" class="card p-4 mb-4" method="POST" enctype="multipart/form-data">
@@ -109,6 +114,6 @@
 </dialog>
 {% endblock %}
 {% block footer_content %}
-<link href="/static/css/omni.css?v={{ config['PROJECT_VERSION'] }}-omni-3" rel="stylesheet">
+<link href="/static/css/omni.css?v={{ config['PROJECT_VERSION'] }}-omni-4" rel="stylesheet">
 <script src="/static/js/omni.js?v={{ config['PROJECT_VERSION'] }}-omni-4"></script>
 {% endblock %}

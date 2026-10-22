@@ -10,6 +10,10 @@ source ./env.local.sh
 
 mkdir -p logs
 
+echo "==> local HTTPS certificate"
+./.venv/bin/python scripts/generate_local_cert.py
+TLS_DIR="${LOCAL_TLS_DIR:-$PERISOLVE_DIR/data/tls}"
+
 echo "==> redis"
 if redis-cli -p 6379 ping >/dev/null 2>&1; then
     echo "    already running"
@@ -52,16 +56,17 @@ if port_busy; then
 fi
 
 ./.venv/bin/python -m flask --app aperisolve.app:create_app run \
-    --host "$FLASK_HOST" --port "$FLASK_PORT" > logs/flask.log 2>&1 &
+    --host "$FLASK_HOST" --port "$FLASK_PORT" \
+    --cert "$TLS_DIR/server.crt" --key "$TLS_DIR/server.key" > logs/flask.log 2>&1 &
 flask_pid=$!
 echo "$flask_pid" > logs/flask.pid
 
 for _ in $(seq 1 30); do
-    curl -fs -m 2 -o /dev/null "http://127.0.0.1:${FLASK_PORT}/" && break
+    curl -kfs -m 2 -o /dev/null "https://127.0.0.1:${FLASK_PORT}/" && break
     sleep 0.5
 done
 
-if ! curl -fs -m 2 -o /dev/null "http://127.0.0.1:${FLASK_PORT}/"; then
+if ! curl -kfs -m 2 -o /dev/null "https://127.0.0.1:${FLASK_PORT}/"; then
     echo "Flask did not come up. See logs/flask.log:"
     tail -20 logs/flask.log
     exit 1
@@ -77,11 +82,12 @@ fi
 echo
 echo "AperiSolve is up on ${FLASK_HOST}:${FLASK_PORT}"
 echo
-echo "  local:  http://127.0.0.1:${FLASK_PORT}/"
+echo "  local:  https://127.0.0.1:${FLASK_PORT}/"
 while read -r addr; do
     [ "$addr" = "127.0.0.1" ] && continue
-    echo "  LAN:    http://${addr}:${FLASK_PORT}/"
+    echo "  LAN:    https://${addr}:${FLASK_PORT}/"
 done < <(ip -4 -o addr show scope global | awk '{split($4,a,"/"); print a[1]}')
 echo
+echo "On Windows, open the home page, download the local root certificate, then install it under Trusted Root Certification Authorities."
 echo "Upload an image from the web form. Results are kept for ${MAX_STORE_TIME}s."
 exit 0
