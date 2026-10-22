@@ -29,7 +29,15 @@ grok --cwd /absolute/path/to/data/<task-id> \
   --always-approve --no-plan --output-format streaming-json
 ```
 
-提示词要求先读取本机 `ctf-router` 技能，再解题；验证出的 flag 写入任务根目录
+首次会话的提示词要求先读取本机 `ctf-router` 技能，再解题。新题优先 resume 最近
+一小时内空闲的全能模式会话，不按题型筛选；会话占用时选其他空闲会话，没有可用
+会话则新建。会话通过进程锁独占，停止或异常退出后释放，不影响并行提交新题。
+复用时提示词为“这是全新题目；复用已有 skills，旧题答案不适用于本题”，再列出
+新题目录、附件及输出文件的绝对路径和用户说明，不再要求重复读取已有技能。
+Grok resume 会保留原会话目录，因此每题仍独立保存文件，提示词使用新题的绝对路径。
+会话标识及来源记录在 `.aperisolve/task.json`，旧记录可从日志中的会话标识直接复用。
+
+验证出的 flag 写入任务根目录
 `flag-re.txt`，每行一个，解题说明另存 `solution.txt`。`grok.log.txt` 保存实时日志，
 `.aperisolve/` 保存内部状态。只有 CLI 正常退出且结果文件非空才显示“已找到 flag”；
 CLI 正常退出但没有结果文件显示“未找到 flag”。
@@ -47,6 +55,7 @@ CLI 正常退出但没有结果文件显示“未找到 flag”。
 | `OMNI_DATA_FOLDER` | 项目根目录下的 `data/` |
 | `GROK_CLI` | `~/.local/bin/grok` |
 | `OMNI_SKILL_PATH` | `~/.grok/skills/ctf-router/SKILL.md` |
+| `OMNI_SESSION_MAX_AGE` | `3600`（可复用会话的空闲秒数，`0` 表示每题新建） |
 
 沿用当前本机 Grok 登录与模型配置，自动批准解题工具调用。原上传模式的大小限制、
 分析流程及结果保留策略保持原状。

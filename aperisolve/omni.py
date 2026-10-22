@@ -28,6 +28,7 @@ from flask import (
 from flask_sock import Sock
 
 from .omni_events import publish_event, subscribe_events
+from .omni_sessions import DEFAULT_SESSION_MAX_AGE
 from .omni_store import (
     ACTIVE,
     locked,
@@ -50,9 +51,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 class WebSocket(Protocol):
     """Minimal Flask-Sock connection surface used by the task stream."""
 
-    def send(self, data: str) -> None: ...
+    def send(self, data: str) -> None:
+        """Send a task notification."""
+        ...
 
-    def receive(self, timeout: float | None = None) -> str | None: ...
+    def receive(self, timeout: float | None = None) -> str | None:
+        """Observe client disconnects while waiting for notifications."""
+        ...
 
 
 class OmniRequest(Request):
@@ -81,6 +86,10 @@ def configure_omni(app: Flask) -> None:
     app.config["OMNI_SKILL_PATH"] = os.getenv(
         "OMNI_SKILL_PATH",
         str(Path.home() / ".grok/skills/ctf-router/SKILL.md"),
+    )
+    app.config["OMNI_SESSION_MAX_AGE"] = max(
+        0,
+        int(os.getenv("OMNI_SESSION_MAX_AGE") or DEFAULT_SESSION_MAX_AGE),
     )
     app.register_blueprint(omni_bp)
     app.config["SOCK_SERVER_OPTIONS"] = {"ping_interval": 25, "max_message_size": 4096}
@@ -130,7 +139,7 @@ def launch_runner(root: Path, task_id: str, log: BinaryIO) -> subprocess.Popen:
 
 
 @omni_bp.post("")
-def create_task() -> tuple[Response, int]:
+def create_task() -> tuple[Response, int]:  # noqa: PLR0915 -- One upload/save/launch boundary.
     """Save a batch and start its own Grok process; never enqueue image analysis."""
     cli = shutil.which(current_app.config["GROK_CLI"])
     skill = Path(current_app.config["OMNI_SKILL_PATH"]).expanduser().resolve()
@@ -149,7 +158,7 @@ def create_task() -> tuple[Response, int]:
         (task / ".aperisolve").mkdir()
         names = []
         for upload in uploads:
-            name = upload.filename.replace("\\", "/").rsplit("/", 1)[-1]
+            name = (upload.filename or "attachment").replace("\\", "/").rsplit("/", 1)[-1]
             name = "".join(c for c in name if c.isprintable())
             if name in {"", ".", ".."}:
                 name = "attachment"
@@ -180,8 +189,7 @@ def create_task() -> tuple[Response, int]:
             else ""
         )
         attachment_section = (
-            "附件位于任务目录的 uploads/ 子目录：\n"
-            + "\n".join(f"- {item['path']}" for item in names)
+            "附件（绝对路径）：\n" + "\n".join(f"- {task / str(item['path'])}" for item in names)
             if names
             else "本任务没有上传附件，请根据用户提供的解题说明/任务文本独立完成解题。\n"
         )
@@ -191,11 +199,12 @@ def create_task() -> tuple[Response, int]:
             f"必须先读取 ctf-router 技能：{skill}\n"
             "按技能要求读取 references/catalog.md，选择 1-3 个相关技能，再读取对应的 "
             ".library/<name>/SKILL.md 执行，说明实际使用的技能路径。\n"
+            "可以安装任意解题所需工具，并在当前任务环境中使用。\n"
             "所有解题文件和临时产物写在当前任务目录内。\n"
             + attachment_section
             + instruction_section
-            + "\n\n找到并验证 flag 后，将 flag 原文写入当前任务根目录的 flag-re.txt，"
-            "每行一个 flag，不要写说明或 Markdown。解题过程另存 solution.txt。"
+            + f"\n\n找到并验证 flag 后，将 flag 原文写入 {task / 'flag-re.txt'}，"
+            f"每行一个 flag，不要写说明或 Markdown。解题过程另存 {task / 'solution.txt'}。"
             "若未找到，记录原因，不要编造 flag，也不要将未验证的猜测写入 flag-re.txt。"
             "这是无人值守任务，请根据已有信息自主推进，将缺失信息和错误写入日志。\n"
         )
@@ -211,6 +220,7 @@ def create_task() -> tuple[Response, int]:
             "error": "",
             "exit_code": None,
             "grok_cli": cli,
+            "session_max_age": current_app.config["OMNI_SESSION_MAX_AGE"],
         }
         with locked(task):
             write_state(task, state)
@@ -270,7 +280,9 @@ def get_text(task_id: str) -> Response:
     """Preview a bounded portion of an uploaded or generated TXT file."""
     try:
         result = preview(
-            _task(task_id), request.args.get("path", ""), tail=request.args.get("tail") == "1",
+            _task(task_id),
+            request.args.get("path", ""),
+            tail=request.args.get("tail") == "1",
         )
     except OSError:
         abort(404)

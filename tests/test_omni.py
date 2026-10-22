@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import BinaryIO
+from urllib.parse import quote
 
 import pytest
 from flask import Flask
@@ -31,13 +32,22 @@ from aperisolve.omni_store import (
 
 
 @pytest.fixture
-def omni_app(app: Flask, tmp_path: Path) -> Flask:
+def omni_app(app: Flask, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Flask:
     """Use a fake CLI which really runs in a detached OS process."""
     cli = tmp_path / "grok-test"
     cli.write_text(
         "#!/usr/bin/python3\n"
-        "import json, os, pathlib, signal, subprocess, sys, time\n"
-        "p = pathlib.Path.cwd()\n"
+        "import json, os, pathlib, signal, subprocess, sys, time, urllib.parse\n"
+        "args = sys.argv[1:]\n"
+        "p = pathlib.Path(args[args.index('--prompt-file') + 1]).parent\n"
+        "cwd = args[args.index('--cwd') + 1]\n"
+        "resume = '--resume' in args\n"
+        "sid = args[args.index('--resume' if resume else '--session-id') + 1]\n"
+        "store = pathlib.Path(os.environ['GROK_HOME']) / 'sessions'\n"
+        "store = store / urllib.parse.quote(cwd, safe='') / sid\n"
+        "store.mkdir(parents=True, exist_ok=True)\n"
+        "(store / 'summary.json').write_text(json.dumps({'info': {'id': sid, 'cwd': cwd}}))\n"
+        "with (store / 'chat_history.jsonl').open('a') as history: history.write(str(p) + '\\n')\n"
         "text = (p / 'instructions.txt').read_text()\n"
         "(p / 'invocation.txt').write_text(json.dumps({'cwd': str(p), 'args': sys.argv[1:]}))\n"
         "print(json.dumps({'update': {'content': {'text': '正在解题\\n'}}}), flush=True)\n"
@@ -54,10 +64,17 @@ def omni_app(app: Flask, tmp_path: Path) -> Flask:
         encoding="utf-8",
     )
     cli.chmod(0o755)
+    with cli.open("a") as stream:
+        stream.write(
+            "print(json.dumps({'type': 'end', 'sessionId': sid, 'cwd': cwd}), flush=True)\n",
+        )
+    monkeypatch.setenv("GROK_HOME", str(tmp_path / "grok-home"))
     skill = tmp_path / "SKILL.md"
     skill.write_text("test skill", encoding="utf-8")
     app.config.update(
-        OMNI_DATA_FOLDER=tmp_path / "data", GROK_CLI=str(cli), OMNI_SKILL_PATH=str(skill),
+        OMNI_DATA_FOLDER=tmp_path / "data",
+        GROK_CLI=str(cli),
+        OMNI_SKILL_PATH=str(skill),
     )
     return app
 
@@ -78,7 +95,11 @@ def post(
 
 
 def wait_task(
-    client: FlaskClient, task_id: str, *, statuses: set[str] | None = None, timeout: float = 12,
+    client: FlaskClient,
+    task_id: str,
+    *,
+    statuses: set[str] | None = None,
+    timeout: float = 12,
 ) -> dict:
     """Poll real process state with a bounded test deadline."""
     expected = statuses or {"completed", "no_flag", "failed", "stopped"}
@@ -113,7 +134,8 @@ def test_real_grok_streaming_text_is_readable() -> None:
 
 
 def test_multifile_names_prompt_and_original_pipeline_isolation(
-    omni_app: Flask, monkeypatch: pytest.MonkeyPatch,
+    omni_app: Flask,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Keep attachments and exact instructions separate from image submissions."""
     calls = fake_launch(monkeypatch)
@@ -141,6 +163,7 @@ def test_multifile_names_prompt_and_original_pipeline_isolation(
     prompt = (task / "prompt.txt").read_text()
     assert text in prompt
     assert "ctf-router" in prompt
+    assert "可以安装任意解题所需工具" in prompt
     assert omni_app.config["OMNI_SKILL_PATH"] in prompt
     assert "uploads/题目_2.txt" in prompt
     assert len(calls) == 1
@@ -150,7 +173,8 @@ def test_multifile_names_prompt_and_original_pipeline_isolation(
 
 
 def test_large_upload_bypasses_only_omni_request_limit(
-    omni_app: Flask, monkeypatch: pytest.MonkeyPatch,
+    omni_app: Flask,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Allow large full-mode files without changing the original upload cap."""
     fake_launch(monkeypatch)
@@ -167,7 +191,8 @@ def test_large_upload_bypasses_only_omni_request_limit(
 
 
 def test_two_identical_batches_create_independent_tasks(
-    omni_app: Flask, monkeypatch: pytest.MonkeyPatch,
+    omni_app: Flask,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Every submission starts a fresh task without deduplication."""
     calls = fake_launch(monkeypatch)
@@ -179,13 +204,14 @@ def test_two_identical_batches_create_independent_tasks(
 
 
 def test_missing_files_and_missing_cli_do_not_start(
-    omni_app: Flask, monkeypatch: pytest.MonkeyPatch,
+    omni_app: Flask,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Reject unusable submissions before spawning a runner."""
     calls = fake_launch(monkeypatch)
     client = omni_app.test_client()
     assert client.post("/api/omni/tasks", data={}).status_code == 400
-    assert post(client, files=[(io.BytesIO(b"x"), "")]).status_code == 400
+    assert post(client, instructions="", files=[(io.BytesIO(b"x"), "")]).status_code == 400
     omni_app.config["GROK_CLI"] = "/does-not-exist"
     assert post(client).status_code == 503
     assert not calls
@@ -216,7 +242,10 @@ def test_save_failure_does_not_launch(omni_app: Flask, monkeypatch: pytest.Monke
     ],
 )
 def test_real_runner_output_and_exit_states(
-    omni_app: Flask, instructions: str, status: str, exit_code: int,
+    omni_app: Flask,
+    instructions: str,
+    status: str,
+    exit_code: int,
 ) -> None:
     """Exercise CLI arguments, working directory and terminal outcomes."""
     client = omni_app.test_client()
@@ -250,6 +279,134 @@ def test_parallel_tasks_and_new_app_keep_running(omni_app: Flask) -> None:
     fresh = create_app()
     fresh.config.update(OMNI_DATA_FOLDER=omni_app.config["OMNI_DATA_FOLDER"])
     assert all(wait_task(fresh.test_client(), task_id)["status"] == "completed" for task_id in ids)
+
+
+def test_resume_latest_idle_session_with_absolute_new_problem_paths(omni_app: Flask) -> None:
+    """Reuse context across different subjects while keeping task outputs independent."""
+    client = omni_app.test_client()
+    first = post(client, "PCAP 流量题").json["task_id"]
+    wait_task(client, first)
+    root = omni_app.config["OMNI_DATA_FOLDER"]
+    original = root / first
+    session = read_state(original)
+    assert session["session_confirmed"]
+    old_prompt = (original / "prompt.txt").read_text()
+    old_flag = (original / "flag-re.txt").read_text()
+
+    second = post(client, "这是 Web 源码题 none").json["task_id"]
+    result = wait_task(client, second)
+    current = root / second
+    state = read_state(current)
+    args = json.loads((current / "invocation.txt").read_text())["args"]
+    assert args[args.index("--resume") + 1] == session["session_id"]
+    assert "--session-id" not in args
+    assert args[args.index("--cwd") + 1] == str(original)
+    assert args[args.index("--prompt-file") + 1] == str(current / "prompt.txt")
+    assert state["resumed_from_task"] == first
+    assert state["session_id"] == session["session_id"]
+    prompt = (current / "prompt.txt").read_text()
+    assert prompt.startswith(
+        "这是全新题目；复用已有 skills，旧题答案不适用于本题\n",  # noqa: RUF001 -- User's exact text.
+    )
+    for path in ("uploads/题目.bin", "flag-re.txt", "solution.txt"):
+        assert str(current / path) in prompt
+    assert "这是 Web 源码题 none" in prompt
+    assert "必须先读取" not in prompt
+    assert "SKILL.md" not in prompt
+    assert "PCAP 流量题" not in prompt
+    assert result["status"] == "no_flag"
+    assert not (current / "flag-re.txt").exists()
+    assert (original / "flag-re.txt").read_text() == old_flag
+    assert (original / "prompt.txt").read_text() == old_prompt
+
+
+def test_newest_session_wins_and_legacy_logs_are_supported(omni_app: Flask) -> None:
+    """Select by recency, including pre-upgrade tasks without session metadata."""
+    client = omni_app.test_client()
+    omni_app.config["OMNI_SESSION_MAX_AGE"] = 0
+    ids = [post(client, text).json["task_id"] for text in ("Web 题", "PNG 题")]
+    for task_id in ids:
+        wait_task(client, task_id)
+    root = omni_app.config["OMNI_DATA_FOLDER"]
+    older, newer = (root / task_id for task_id in ids)
+    with locked(older):
+        state = read_state(older)
+        state["ended_at"] = time.time() - 10
+        write_state(older, state)
+    session_id = read_state(newer)["session_id"]
+    with locked(newer):
+        state = read_state(newer)
+        for key in ("session_id", "session_cwd", "session_confirmed", "resumed_from_task"):
+            state.pop(key, None)
+        write_state(newer, state)
+    omni_app.config["OMNI_SESSION_MAX_AGE"] = 3600
+    current = post(client, "Crypto 题").json["task_id"]
+    wait_task(client, current)
+    assert read_state(root / current)["session_id"] == session_id
+    assert read_state(root / current)["resumed_from_task"] == ids[-1]
+
+
+@pytest.mark.parametrize("unavailable", ["expired", "deleted"])
+def test_unavailable_sessions_start_a_fresh_conversation(
+    omni_app: Flask,
+    unavailable: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Never resume stale or removed session files."""
+    client = omni_app.test_client()
+    first = post(client).json["task_id"]
+    wait_task(client, first)
+    root = omni_app.config["OMNI_DATA_FOLDER"]
+    state = read_state(root / first)
+    if unavailable == "expired":
+        with locked(root / first):
+            state["ended_at"] = time.time() - 7200
+            write_state(root / first, state)
+    else:
+        store = Path(os.environ["GROK_HOME"]) / "sessions"
+        history = store / quote(state["session_cwd"], safe="") / state["session_id"]
+        (history / "chat_history.jsonl").unlink()
+    # A submitted task freezes its reuse policy for the detached runner.
+    monkeypatch.setenv("OMNI_SESSION_MAX_AGE", "1")
+    second = post(client).json["task_id"]
+    wait_task(client, second)
+    current = root / second
+    args = json.loads((current / "invocation.txt").read_text())["args"]
+    assert "--resume" not in args
+    assert read_state(current)["session_id"] != state["session_id"]
+    assert "必须先读取 ctf-router" in (current / "prompt.txt").read_text()
+
+
+def test_parallel_resumes_exclusively_lease_sessions_and_stop_releases_them(
+    omni_app: Flask,
+) -> None:
+    """Two real runners cannot append to one session; a stopped runner frees it."""
+    client = omni_app.test_client()
+    root = omni_app.config["OMNI_DATA_FOLDER"]
+    first = post(client).json["task_id"]
+    wait_task(client, first)
+    session_id = read_state(root / first)["session_id"]
+    running = [post(client, "hold").json["task_id"] for _ in range(2)]
+    try:
+        for task_id in running:
+            wait_task(client, task_id, statuses={"running"})
+        states = [read_state(root / task_id) for task_id in running]
+        assert len({state["session_id"] for state in states}) == 2
+        assert sum(state["session_id"] == session_id for state in states) == 1
+        for task_id in running:
+            assert client.post(f"/api/omni/tasks/{task_id}/stop").json["status"] == "stopped"
+        deadline = time.monotonic() + 3
+        while any(process_alive(state["runner"]) for state in states):
+            assert time.monotonic() < deadline
+            time.sleep(0.05)
+        final = post(client).json["task_id"]
+        wait_task(client, final)
+        latest = max(running, key=lambda task_id: read_state(root / task_id)["ended_at"])
+        assert read_state(root / final)["session_id"] == read_state(root / latest)["session_id"]
+        assert read_state(root / final)["resumed_from_task"] == latest
+    finally:
+        for task_id in running:
+            client.post(f"/api/omni/tasks/{task_id}/stop")
 
 
 def test_runner_survives_submitter_exit(omni_app: Flask) -> None:
@@ -309,7 +466,9 @@ def test_stop_kills_stubborn_descendants_and_preserves_files(omni_app: Flask) ->
 
 
 def test_previews_downloads_and_path_boundaries(
-    omni_app: Flask, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    omni_app: Flask,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """Bound text reads and reject traversal, symlinks and nonregular files."""
     fake_launch(monkeypatch)
@@ -349,7 +508,8 @@ def test_previews_downloads_and_path_boundaries(
 
 
 def test_stale_runner_pid_identity_and_terminal_stop(
-    omni_app: Flask, monkeypatch: pytest.MonkeyPatch,
+    omni_app: Flask,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Reject reused PIDs and keep terminal states stable."""
     fake_launch(monkeypatch)
@@ -366,7 +526,8 @@ def test_stale_runner_pid_identity_and_terminal_stop(
 
 
 def test_records_paginate_and_home_has_no_detail_navigation(
-    omni_app: Flask, monkeypatch: pytest.MonkeyPatch,
+    omni_app: Flask,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Keep records paginated inside the homepage dialog."""
     fake_launch(monkeypatch)
@@ -382,5 +543,5 @@ def test_records_paginate_and_home_has_no_detail_navigation(
     home = client.get("/").get_data(as_text=True)
     assert 'id="omni-mode"' in home
     assert 'id="omni-history"' in home
-    assert "全能任务记录" in home
+    assert "任务记录" in home
     assert client.get(f"/omni/tasks/{ids[0]}").status_code == 404
