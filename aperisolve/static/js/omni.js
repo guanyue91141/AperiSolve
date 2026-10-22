@@ -161,6 +161,7 @@
       loadPreview(row);
     }));
     row.stop.addEventListener("click", async () => {
+      if (!window.confirm("确定要停止此任务吗？")) return;
       row.stop.disabled = true;
       row.stop.textContent = "正在停止…";
       try {
