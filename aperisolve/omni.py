@@ -145,6 +145,12 @@ def create_task() -> tuple[Response, int]:
                 },
             )
         (task / "instructions.txt").write_text(instructions, encoding="utf-8")
+        instruction_section = (
+            "\n\n以下是用户的解题说明原文，请结合附件理解并遵守其中的 flag 格式要求：\n"
+            + instructions
+            if instructions.strip()
+            else ""
+        )
         prompt = (
             "这是用户提交的 CTF 解题任务，请直接完成解题。\n"
             f"任务工作目录：{task}\n"
@@ -153,8 +159,7 @@ def create_task() -> tuple[Response, int]:
             ".library/<name>/SKILL.md 执行，说明实际使用的技能路径。\n"
             "所有解题文件和临时产物写在当前任务目录内。附件位于：\n"
             + "\n".join(f"- {item['path']}" for item in names)
-            + "\n\n以下是用户的解题说明原文，请结合附件理解并遵守其中的 flag 格式要求：\n"
-            + instructions
+            + instruction_section
             + "\n\n找到并验证 flag 后，将 flag 原文写入当前任务根目录的 flag-re.txt，"
             "每行一个 flag，不要写说明或 Markdown。解题过程另存 solution.txt。"
             "若未找到，记录原因，不要编造 flag，也不要将未验证的猜测写入 flag-re.txt。"
