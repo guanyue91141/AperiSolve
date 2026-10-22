@@ -5,6 +5,7 @@ const TOOL_ORDER = window.TOOL_ORDER || [
   "spectrogram",
   "color_remapping",
   "file",
+  "file_anomalies",
   "pdfinfo",
   "pdfid",
   "exiftool",
@@ -226,7 +227,7 @@ function renderMainPreview(infoData) {
   const fileName = escapeHtml(rawName);
 
   if (infoData.kind === "image") {
-    return `<img src="${src}" alt="${t("Analyzed file")}"/>`;
+    return `<img src="${src}" alt="${t("Analyzed file")}" decoding="async" fetchpriority="low"/>`;
   }
   if (infoData.kind === "video") {
     // #t=0.1 nudges the browser to render a poster frame instead of a blank box.
@@ -524,7 +525,31 @@ const LANG_PREFIX = window.LANG_PREFIX || "";
 
 // Analyzer heading: links to the tool's wiki guide when one exists.
 function analyzerTitle(tool) {
-  const label = capitalize(tool.replace("_", " "));
+  if (tool === "file_anomalies") {
+    return t("File anomaly inspection (magic number and terminator analysis)");
+  }
+  const knownTitles = {
+    binwalk: "Binwalk (embedded file and signature scanning)",
+    color_remapping: "Color remapping",
+    decomposer: "Decomposer (image bit-plane analysis)",
+    exiftool: "ExifTool metadata",
+    file: "File (file type identification)",
+    foremost: "Foremost (file carving and recovery analysis)",
+    identify: "Identify (image format and properties)",
+    jpseek: "JPSeek (JPHide steganography extraction)",
+    jsteg: "JSteg (JPEG coefficient steganography analysis)",
+    openstego: "OpenStego (image steganography extraction)",
+    outguess: "OutGuess (JPEG steganography analysis)",
+    pdfid: "PDFiD (PDF suspicious keyword scan)",
+    pdfinfo: "PDFInfo (PDF metadata inspection)",
+    pcrt: "PCRT (PNG repair and trailing data recovery)",
+    pngcheck: "Pngcheck (PNG chunk and CRC validation)",
+    spectrogram: "Spectrogram (audio frequency visualization)",
+    steghide: "Steghide (file steganography extraction)",
+    strings: "Strings (hexadecimal and text search)",
+    zsteg: "zsteg (PNG/BMP bit-plane steganography analysis)",
+  };
+  const label = t(knownTitles[tool] || capitalize(tool.replace("_", " ")));
   if (WIKI_TOOLS.includes(tool)) {
     return `<a class="analyzer-title-link" href="${LANG_PREFIX}/wiki/tools/${tool}"
       title="${t("Learn more")}">${label} <i class="fa fa-book-open fa-2xs"></i></a>`;
@@ -542,9 +567,601 @@ function renderAnalyzing() {
     `<p class="mb-0">${t("Analyzing your file…")}</p></div>`;
 }
 
-function parseResult(result) {
+function renderHexRow(row) {
+  const start = Number(row.offset);
+  return `<div class="hex-row" role="row" data-start="${Number.isFinite(start) ? start : 0}"
+    data-search-hex="${escapeHtml(row.hex || "").toLowerCase()}"
+    data-search-ascii="${escapeHtml(row.ascii || "").toLowerCase()}"
+    data-search-offset="0x${escapeHtml(row.offset_hex || "").toLowerCase()}">
+    <span class="hex-offset" role="cell">${escapeHtml(row.offset_hex || "")}</span>
+    <span class="hex-bytes" role="cell">${escapeHtml(row.hex || "")}</span>
+    <span class="hex-ascii" role="cell">${escapeHtml(row.ascii || "")}</span>
+  </div>`;
+}
+
+function getHexCellForSelection(node) {
+  const element = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
+  return element?.closest(".hex-bytes, .hex-ascii") || null;
+}
+
+function getSelectionOffsetInCell(node, offset, cell) {
+  if (node?.nodeType === Node.TEXT_NODE && node.parentElement === cell) {
+    return Math.max(0, Math.min(offset, node.textContent.length));
+  }
+  try {
+    const prefix = document.createRange();
+    prefix.selectNodeContents(cell);
+    prefix.setEnd(node, offset);
+    return prefix.toString().length;
+  } catch {
+    return 0;
+  }
+}
+
+document.addEventListener("copy", (event) => {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed) return;
+  const anchorCell = getHexCellForSelection(selection.anchorNode);
+  const focusCell = getHexCellForSelection(selection.focusNode);
+  if (!anchorCell || !focusCell) return;
+  const selectedType = anchorCell.classList.contains("hex-bytes") ? "hex-bytes" : "hex-ascii";
+  if (!focusCell.classList.contains(selectedType)) return;
+  const workspace = anchorCell.closest(".strings-workspace");
+  if (!workspace || workspace !== focusCell.closest(".strings-workspace")) return;
+
+  const cells = Array.from(workspace.querySelectorAll(`.hex-grid .${selectedType}`));
+  const anchorIndex = cells.indexOf(anchorCell);
+  const focusIndex = cells.indexOf(focusCell);
+  if (anchorIndex < 0 || focusIndex < 0) return;
+
+  const anchorOffset = getSelectionOffsetInCell(selection.anchorNode, selection.anchorOffset, anchorCell);
+  const focusOffset = getSelectionOffsetInCell(selection.focusNode, selection.focusOffset, focusCell);
+  const forward = anchorIndex < focusIndex || (anchorIndex === focusIndex && anchorOffset <= focusOffset);
+  const firstIndex = forward ? anchorIndex : focusIndex;
+  const lastIndex = forward ? focusIndex : anchorIndex;
+  const firstOffset = forward ? anchorOffset : focusOffset;
+  const lastOffset = forward ? focusOffset : anchorOffset;
+  const selectedText = cells.slice(firstIndex, lastIndex + 1).map((cell, relativeIndex) => {
+    const text = cell.textContent || "";
+    if (firstIndex === lastIndex) return text.slice(firstOffset, lastOffset);
+    if (relativeIndex === 0) return text.slice(firstOffset);
+    if (relativeIndex === lastIndex - firstIndex) return text.slice(0, lastOffset);
+    return text;
+  }).join("\n");
+
+  if (!event.clipboardData) return;
+  event.clipboardData.setData("text/plain", selectedText);
+  event.preventDefault();
+});
+
+const STRINGS_RENDER_BATCH_SIZE = 200;
+
+function appendStringBatch(list) {
+  const strings = list._allStrings || [];
+  const start = Number(list.dataset.renderedCount || 0);
+  const end = Math.min(start + STRINGS_RENDER_BATCH_SIZE, strings.length);
+  const fragment = document.createDocumentFragment();
+  for (let index = start; index < end; index++) {
+    const item = strings[index];
+    const offset = item.offset ? Number.parseInt(item.offset, 16) : NaN;
+    const offsetLabel = item.offset ? "0x" + item.offset : "—";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "strings-item";
+    button.dataset.offset = Number.isFinite(offset) ? String(offset) : "";
+    button.dataset.searchText = String(item.text || "").toLowerCase();
+    button.dataset.searchOffset = offsetLabel.toLowerCase();
+    const offsetSpan = document.createElement("span");
+    offsetSpan.className = "strings-item-offset";
+    offsetSpan.textContent = offsetLabel;
+    const textSpan = document.createElement("span");
+    textSpan.className = "strings-item-text";
+    textSpan.textContent = item.text || "";
+    button.append(offsetSpan, textSpan);
+    fragment.appendChild(button);
+  }
+  list.insertBefore(fragment, list.querySelector(".strings-load-more"));
+  list.dataset.renderedCount = String(end);
+  const button = list.querySelector(".strings-load-more");
+  if (button) {
+    button.textContent = t("Show more strings") + " (" + end + " / " + strings.length + ")";
+    button.hidden = end >= strings.length;
+  }
+  const count = list.closest(".extracted-strings-pane")?.querySelector(".strings-search-count");
+  if (count && !count.dataset.searchActive) count.textContent = end + " / " + strings.length;
+}
+
+document.addEventListener("click", (event) => {
+  const button = event.target.closest(".strings-load-more");
+  if (!button) return;
+  const list = button.closest(".strings-list");
+  if (list) appendStringBatch(list);
+});
+
+function renderStringsOutput(data, submissionHash = "") {
+  const rows = Array.isArray(data.hex_rows) ? data.hex_rows : [];
+  const strings = Array.isArray(data.strings) ? data.strings : [];
+  const hexRows = rows.map(renderHexRow).join("");
+  const stringRows = strings.slice(0, STRINGS_RENDER_BATCH_SIZE).map((item) => {
+    const offset = item.offset ? Number.parseInt(item.offset, 16) : NaN;
+    const offsetLabel = item.offset ? `0x${item.offset}` : "—";
+    return `<button type="button" class="strings-item" data-offset="${Number.isFinite(offset) ? offset : ""}"
+      data-search-text="${escapeHtml(item.text || "").toLowerCase()}"
+      data-search-offset="${escapeHtml(offsetLabel).toLowerCase()}">
+      <span class="strings-item-offset">${escapeHtml(offsetLabel)}</span>
+      <span class="strings-item-text">${escapeHtml(item.text || "")}</span>
+    </button>`;
+  }).join("");
+  const previewNote = data.preview_truncated
+    ? `<div class="strings-view-note hex-preview-note">${t("Showing the first 4096 bytes")} · ${escapeHtml(formatBytes(Number(data.file_size) || 0))}</div>`
+    : "";
+  const truncationNote = data.strings_truncated
+    ? `<div class="strings-view-note">${t("String output was truncated")}</div>`
+    : "";
+
+  return `<div class="strings-view-intro">${t("WinHex-style byte and string view")}</div>
+    ${previewNote}${truncationNote}
+    <div class="strings-workspace" data-submission-hash="${escapeHtml(submissionHash)}" data-needs-full-load="${data.preview_truncated ? "true" : "false"}">
+      <section class="strings-pane hex-pane" aria-label="${t("Hex view")}">
+        <div class="strings-pane-heading">${t("Hex view")} <span>${t("Offset")} · ${t("Hex bytes")} · ${t("ASCII")}</span></div>
+        <div class="strings-search-row">
+          <input type="search" class="strings-search-input hex-search-input" aria-label="${t("Search hex bytes, ASCII, or offset")}" placeholder="${t("Search hex bytes, ASCII, or offset")}" autocomplete="off">
+          <button type="button" class="strings-search-nav" data-direction="previous" aria-label="${t("Previous match")}" disabled>${t("Previous match")}</button>
+          <button type="button" class="strings-search-nav" data-direction="next" aria-label="${t("Next match")}" disabled>${t("Next match")}</button>
+          <span class="strings-search-count" aria-live="polite">${rows.length} / ${rows.length}</span>
+        </div>
+        <div class="hex-grid" role="table" aria-label="${t("Hex view")}">
+          <div class="hex-row hex-grid-heading" role="row"><span role="columnheader">${t("Offset")}</span><span role="columnheader">${t("Hex bytes")}</span><span role="columnheader">${t("ASCII")}</span></div>
+          ${hexRows || `<div class="strings-empty">${t("No bytes to display")}</div>`}
+          <div class="strings-empty search-empty" hidden>${t("No matches found.")}</div>
+        </div>
+      </section>
+      <section class="strings-pane extracted-strings-pane" aria-label="${t("Extracted strings")}">
+        <div class="strings-pane-heading">${t("Extracted strings")} <span>${strings.length}</span></div>
+        <div class="strings-search-row">
+          <input type="search" class="strings-search-input extracted-search-input" aria-label="${t("Search extracted strings or offset")}" placeholder="${t("Search extracted strings or offset")}" autocomplete="off">
+          <button type="button" class="strings-search-nav" data-direction="previous" aria-label="${t("Previous match")}" disabled>${t("Previous match")}</button>
+          <button type="button" class="strings-search-nav" data-direction="next" aria-label="${t("Next match")}" disabled>${t("Next match")}</button>
+          <span class="strings-search-count" aria-live="polite">${strings.length} / ${strings.length}</span>
+        </div>
+        <p class="strings-pane-hint">${t("Select a string to locate its bytes in the hex view.")}</p>
+        <div class="strings-list" data-rendered-count="${Math.min(strings.length, STRINGS_RENDER_BATCH_SIZE)}">${stringRows || `<div class="strings-empty">${t("No printable strings found.")}</div>`}<button type="button" class="strings-load-more"${strings.length <= STRINGS_RENDER_BATCH_SIZE ? " hidden" : ""}>${t("Show more strings")} (${Math.min(strings.length, STRINGS_RENDER_BATCH_SIZE)} / ${strings.length})</button><div class="strings-empty search-empty" hidden>${t("No matches found.")}</div></div>
+      </section>
+    </div>`;
+}
+
+function renderLegacyStringsOutput(lines, preview, submissionHash = "") {
+  const rows = Array.isArray(preview?.hex_rows) ? preview.hex_rows : [];
+  const bytes = [];
+  for (const row of rows) {
+    for (const pair of String(row.hex || "").match(/[0-9a-fA-F]{2}/g) || []) {
+      bytes.push(Number.parseInt(pair, 16));
+    }
+  }
+
+  let searchFrom = 0;
+  const strings = lines.map((line) => {
+    const text = typeof line === "string" ? line : String(line ?? "");
+    const needle = Array.from(new TextEncoder().encode(text));
+    let offset = -1;
+    if (needle.length) {
+      for (let start = searchFrom; start <= bytes.length - needle.length; start++) {
+        if (needle.every((value, index) => bytes[start + index] === value)) {
+          offset = start;
+          searchFrom = start + needle.length;
+          break;
+        }
+      }
+      if (offset < 0) {
+        for (let start = 0; start <= bytes.length - needle.length; start++) {
+          if (needle.every((value, index) => bytes[start + index] === value)) {
+            offset = start;
+            break;
+          }
+        }
+      }
+    }
+    return { offset: offset >= 0 ? offset.toString(16).toUpperCase() : "", text };
+  });
+
+  return renderStringsOutput({
+    ...(preview || {}),
+    hex_rows: rows,
+    strings,
+    strings_truncated: false,
+  }, submissionHash);
+}
+
+const legacyHexPreviewCache = new Map();
+
+function loadLegacyHexPreview(submissionHash) {
+  if (legacyHexPreviewCache.has(submissionHash)) {
+    return legacyHexPreviewCache.get(submissionHash);
+  }
+  const request = fetch(`/hex-preview/${encodeURIComponent(submissionHash)}`)
+    .then((response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    })
+    .catch((error) => {
+      legacyHexPreviewCache.delete(submissionHash);
+      throw error;
+    });
+  legacyHexPreviewCache.set(submissionHash, request);
+  return request;
+}
+
+async function loadHexWindow(workspace, offset, isCurrent = () => true) {
+  const submissionHash = workspace?.dataset.submissionHash;
+  if (!submissionHash) return false;
+  if (workspace.dataset.fullPreviewLoaded === "true") return true;
+  if (workspace._fullPreviewPromise) {
+    const loaded = await workspace._fullPreviewPromise;
+    if (loaded) return true;
+  }
+  const response = await fetch(`/hex-preview/${encodeURIComponent(submissionHash)}?offset=${encodeURIComponent(offset)}`);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const preview = await response.json();
+  if (!isCurrent()) return false;
+  const grid = workspace.querySelector(".hex-grid");
+  if (!grid) return false;
+  grid.querySelectorAll(".hex-row:not(.hex-grid-heading)").forEach((row) => row.remove());
+  const empty = grid.querySelector(":scope > .strings-empty:not(.search-empty)");
+  empty?.remove();
+  grid.insertAdjacentHTML("beforeend", (preview.hex_rows || []).map(renderHexRow).join(""));
+
+  const summary = workspace.closest(".analyzer")?.querySelector(".hex-preview-note");
+  if (summary && Number(preview.preview_start) > 0) {
+    summary.textContent = `${t("Showing bytes around offset")} 0x${Number(offset).toString(16).toUpperCase()} · ${formatBytes(Number(preview.file_size) || 0)}`;
+  }
+  const displayed = workspace.querySelector(".strings-pane-heading span");
+  if (displayed && Number(preview.preview_start) > 0) {
+    displayed.textContent = `${t("Window at offset")} 0x${Number(preview.preview_start).toString(16).toUpperCase()}`;
+  }
+  return true;
+}
+
+function loadFullHexPreview(workspace) {
+  if (!workspace?.dataset.submissionHash) return Promise.resolve(false);
+  if (workspace.dataset.fullPreviewLoaded === "true") return Promise.resolve(true);
+  if (workspace._fullPreviewPromise) return workspace._fullPreviewPromise;
+
+  const submissionHash = workspace.dataset.submissionHash;
+  workspace._fullPreviewPromise = fetch(`/hex-preview/${encodeURIComponent(submissionHash)}?full=1`)
+    .then((response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    })
+    .then((preview) => {
+      if (!workspace.isConnected) return false;
+      const grid = workspace.querySelector(".hex-grid");
+      if (!grid) return false;
+      grid.querySelectorAll(".hex-row:not(.hex-grid-heading)").forEach((row) => row.remove());
+      grid.querySelector(":scope > .strings-empty:not(.search-empty)")?.remove();
+      grid.insertAdjacentHTML("beforeend", (preview.hex_rows || []).map(renderHexRow).join(""));
+      workspace.dataset.fullPreviewLoaded = "true";
+      workspace.dataset.needsFullLoad = "false";
+      workspace.closest(".analyzer")?.querySelector(".hex-preview-note")?.remove();
+
+      const heading = workspace.querySelector(".hex-pane .strings-pane-heading span");
+      if (heading) heading.textContent = `${t("Offset")} · ${t("Hex bytes")} · ${t("ASCII")}`;
+      const count = workspace.querySelector(".hex-pane .strings-search-count");
+      const rowCount = (preview.hex_rows || []).length;
+      if (count) count.textContent = `${rowCount} / ${rowCount}`;
+
+      const search = workspace.querySelector(".hex-search-input");
+      if (search?.value.trim()) updateStringsSearch(search);
+      return true;
+    })
+    .catch((error) => {
+      workspace._fullPreviewPromise = null;
+      console.error("Failed to load the complete hex view:", error);
+      return false;
+    });
+  return workspace._fullPreviewPromise;
+}
+
+function getStringsSearchMatches(container, query, hexSearch) {
+  if (!query) return [];
+
+  const matches = [];
+  const seen = new Set();
+  const addMatch = (offset, rows, item = null) => {
+    const safeOffset = Number.isFinite(offset) ? offset : Number.MAX_SAFE_INTEGER;
+    const key = item ? `string:${item.dataset.offset}:${item.dataset.searchText}` : `hex:${safeOffset}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    matches.push({ offset: safeOffset, rows, item });
+  };
+
+  if (!hexSearch) {
+    for (const item of container.querySelectorAll(".strings-item")) {
+      if (item.dataset.searchText.includes(query) || item.dataset.searchOffset.includes(query)) {
+        addMatch(item.dataset.offset ? Number(item.dataset.offset) : NaN, [], item);
+      }
+    }
+    return matches.sort((a, b) => a.offset - b.offset);
+  }
+
+  const rows = Array.from(container.querySelectorAll(".hex-row:not(.hex-grid-heading)"));
+  const asciiChars = [];
+  const asciiOffsets = [];
+  const hexBytes = [];
+  const byteOffsets = [];
+  for (const [rowIndex, row] of rows.entries()) {
+    const rowStart = Number(row.dataset.start) || 0;
+    const rowAscii = row.dataset.searchAscii || "";
+    for (let charIndex = 0; charIndex < rowAscii.length; charIndex++) {
+      const char = rowAscii[charIndex];
+      asciiChars.push(char);
+      asciiOffsets.push({ offset: rowStart + charIndex, rowIndex });
+    }
+    const bytes = (row.dataset.searchHex || "").match(/[0-9a-f]{2}/g) || [];
+    for (let byteIndex = 0; byteIndex < bytes.length; byteIndex++) {
+      hexBytes.push(bytes[byteIndex]);
+      byteOffsets.push({ offset: rowStart + byteIndex, rowIndex });
+    }
+  }
+
+  const addStreamMatches = (stream, offsets, needle) => {
+    if (!needle) return;
+    for (let position = 0; position <= stream.length - needle.length; position++) {
+      let found = true;
+      for (let index = 0; index < needle.length; index++) {
+        if (stream[position + index] !== needle[index]) {
+          found = false;
+          break;
+        }
+      }
+      if (!found) continue;
+      const first = offsets[position];
+      const last = offsets[position + needle.length - 1];
+      if (!first || !last) continue;
+      const affectedRows = [];
+      for (let rowIndex = first.rowIndex; rowIndex <= last.rowIndex; rowIndex++) affectedRows.push(rows[rowIndex]);
+      addMatch(first.offset, affectedRows);
+    }
+  };
+
+  addStreamMatches(asciiChars, asciiOffsets, Array.from(query));
+
+  const compactHexQuery = query.replace(/[\s,:-]/g, "");
+  if (/^[0-9a-f]+$/i.test(compactHexQuery) && compactHexQuery.length > 0 && compactHexQuery.length % 2 === 0) {
+    const queryBytes = compactHexQuery.match(/[0-9a-f]{2}/g) || [];
+    addStreamMatches(hexBytes, byteOffsets, queryBytes);
+  }
+
+  for (const [rowIndex, row] of rows.entries()) {
+    if (row.dataset.searchOffset.includes(query)) {
+      addMatch(Number(row.dataset.start), [row]);
+    }
+  }
+
+  return matches.sort((a, b) => a.offset - b.offset);
+}
+
+function focusStringsSearchMatch(container, index) {
+  const matches = container._searchMatches || [];
+  if (!matches.length) return;
+  const match = matches[index];
+  container._searchIndex = index;
+  const workspace = container.closest(".strings-workspace");
+  workspace?.querySelectorAll(".is-search-current, .is-search-located").forEach((item) => {
+    item.classList.remove("is-search-current", "is-search-located");
+  });
+  if (match.item) match.item.classList.add("is-search-current");
+
+  let byteRow = null;
+  if (!match.item && Number.isFinite(match.offset) && match.offset < Number.MAX_SAFE_INTEGER) {
+    const rowStart = Math.floor(match.offset / 16) * 16;
+    byteRow = workspace?.querySelector(`.hex-row[data-start="${rowStart}"]`);
+    if (!byteRow && workspace?.dataset.submissionHash) {
+      loadHexWindow(workspace, match.offset, () => container._searchMatches?.[container._searchIndex] === match).then((loaded) => {
+        if (!loaded || container._searchMatches?.[container._searchIndex] !== match) return;
+        const targetRow = workspace.querySelector(`.hex-row[data-start="${rowStart}"]`);
+        if (targetRow) {
+          targetRow.classList.add("is-search-current");
+          targetRow.scrollIntoView({ block: "nearest" });
+        }
+      }).catch((error) => console.error("Failed to load the matching hex window:", error));
+    }
+  }
+  if (byteRow) byteRow.classList.add("is-search-current");
+  const target = match.item || byteRow;
+  target?.scrollIntoView({ block: "nearest" });
+
+  if (match.item) {
+    const stringByteRow = workspace?.querySelector(`.hex-row[data-start="${Math.floor(match.offset / 16) * 16}"]`);
+    if (stringByteRow) {
+      stringByteRow.classList.add("is-search-located");
+      stringByteRow.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  const count = container.querySelector(".strings-search-count");
+  if (count) count.textContent = `${index + 1} / ${matches.length}${container._matchesTruncated ? "+" : ""}`;
+}
+
+function updateStringsSearch(input) {
+  const hexSearch = input.classList.contains("hex-search-input");
+  const container = input.closest(hexSearch ? ".hex-pane" : ".extracted-strings-pane");
+  if (!container) return;
+  container.closest(".strings-workspace")?.querySelectorAll(".is-search-current, .is-search-located").forEach((item) => {
+    item.classList.remove("is-search-current", "is-search-located");
+  });
+
+  const query = input.value.trim().toLowerCase();
+  const items = hexSearch
+    ? Array.from(container.querySelectorAll(".hex-row:not(.hex-grid-heading)"))
+    : Array.from(container.querySelectorAll(".strings-item"));
+  const matches = getStringsSearchMatches(container, query, hexSearch);
+  container._searchMatches = matches;
+  container._searchIndex = -1;
+  container._matchesTruncated = false;
+  const requestId = (container._searchRequestId || 0) + 1;
+  container._searchRequestId = requestId;
+
+  const empty = container.querySelector(".search-empty");
+  if (empty) empty.hidden = !query || matches.length > 0;
+  const count = container.querySelector(".strings-search-count");
+  if (count) count.textContent = query ? `0 / ${matches.length}` : `${items.length} / ${items.length}`;
+  container.querySelectorAll(".strings-search-nav").forEach((button) => {
+    button.disabled = matches.length === 0;
+  });
+  if (matches.length) focusStringsSearchMatch(container, 0);
+
+  const workspace = container.closest(".strings-workspace");
+  const submissionHash = workspace?.dataset.submissionHash;
+  const compactHexQuery = query.replace(/[\s,:-]/g, "");
+  if (hexSearch && query && submissionHash && /^[0-9a-f]+$/i.test(compactHexQuery) && compactHexQuery.length % 2 === 0) {
+    window.clearTimeout(container._fullSearchTimer);
+    container._fullSearchTimer = window.setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ q: query });
+        const response = await fetch(`/hex-search/${encodeURIComponent(submissionHash)}?${params}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const result = await response.json();
+        if (container._searchRequestId !== requestId || input.value.trim().toLowerCase() !== query) return;
+        const knownOffsets = new Set(container._searchMatches.map((match) => match.offset));
+        for (const offset of result.matches || []) {
+          const numericOffset = Number(offset);
+          if (!knownOffsets.has(numericOffset)) {
+            container._searchMatches.push({ offset: numericOffset, rows: [], item: null });
+            knownOffsets.add(numericOffset);
+          }
+        }
+        container._searchMatches.sort((a, b) => a.offset - b.offset);
+        container._matchesTruncated = Boolean(result.truncated);
+        const fullCount = container._searchMatches.length;
+        if (count) count.textContent = `0 / ${fullCount}${result.truncated ? "+" : ""}`;
+        container.querySelectorAll(".strings-search-nav").forEach((button) => {
+          button.disabled = fullCount === 0;
+        });
+        if (empty) empty.hidden = fullCount > 0;
+        if (fullCount) focusStringsSearchMatch(container, 0);
+      } catch (error) {
+        console.error("Failed to search the complete file:", error);
+      }
+    }, 180);
+  }
+}
+
+function moveStringsSearch(container, direction) {
+  const matches = container?._searchMatches || [];
+  if (!matches.length) return;
+  const current = Number.isInteger(container._searchIndex) ? container._searchIndex : 0;
+  const next = (current + direction + matches.length) % matches.length;
+  focusStringsSearchMatch(container, next);
+}
+
+document.addEventListener("input", (event) => {
+  const input = event.target;
+  if (input instanceof HTMLInputElement && input.matches(".strings-search-input")) updateStringsSearch(input);
+});
+
+document.addEventListener("click", (event) => {
+  const button = event.target.closest(".strings-search-nav");
+  if (!button || button.disabled) return;
+  const container = button.closest(".hex-pane, .extracted-strings-pane");
+  moveStringsSearch(container, button.dataset.direction === "previous" ? -1 : 1);
+});
+
+document.addEventListener("keydown", (event) => {
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement) || !input.matches(".strings-search-input") || event.key !== "Enter") return;
+  event.preventDefault();
+  const container = input.closest(input.classList.contains("hex-search-input") ? ".hex-pane" : ".extracted-strings-pane");
+  moveStringsSearch(container, event.shiftKey ? -1 : 1);
+});
+
+function renderFileAnomalies(data) {
+  const signatures = Array.isArray(data.signatures) ? data.signatures : [];
+  const anomalies = Array.isArray(data.anomalies) ? data.anomalies : [];
+  const terminator = data.terminator || {};
+  const signatureRows = signatures.map((item) => `<tr>
+    <td>${escapeHtml(item.offset_hex || "")}</td>
+    <td>${escapeHtml(item.name || "")}</td>
+    <td><code>${escapeHtml(item.signature || "")}</code></td>
+    <td><span class="signature-location ${item.location === "header" ? "is-header" : "is-embedded"}">${item.location === "header" ? "文件头" : "嵌入数据"}</span></td>
+  </tr>`).join("");
+  const terminatorStatus = terminator.status === "found"
+    ? "已找到"
+    : terminator.status === "missing"
+      ? "缺失"
+      : "不适用";
+  const terminatorPosition = terminator.offset_hex
+    ? `<span>${escapeHtml(terminator.offset_hex)} → ${escapeHtml(terminator.end_hex || "")}</span>`
+    : "";
+  const anomalyCards = anomalies.map((item) => `<article class="file-anomaly-card severity-${escapeHtml(item.severity || "warning")}">
+    <div class="file-anomaly-title">${escapeHtml(t(item.title || ""))}</div>
+    <div class="file-anomaly-range"><span>起始偏移 ${escapeHtml(item.start_hex || "")}</span><span>结束偏移 ${escapeHtml(item.end_hex || "")}</span></div>
+    <p>${escapeHtml(t(item.detail || ""))}</p>
+  </article>`).join("");
+
+  return `<div class="file-inspection-summary">
+      <strong>${escapeHtml(data.summary || "")}</strong>
+      <span>文件大小：${escapeHtml(formatBytes(Number(data.size) || 0))}</span>
+    </div>
+    <section class="file-inspection-section">
+      <h3>常见魔数匹配</h3>
+      ${signatureRows
+        ? `<div class="table-container"><table class="signature-table"><thead><tr><th>偏移</th><th>匹配格式</th><th>特征字节</th><th>位置</th></tr></thead><tbody>${signatureRows}</tbody></table></div>`
+        : `<div class="strings-empty">未检测到常见文件魔数。</div>`}
+    </section>
+    <section class="file-inspection-section">
+      <h3>结束标记</h3>
+      <div class="terminator-row"><span><code>${escapeHtml(terminator.name || "—")}</code></span><span class="terminator-status status-${escapeHtml(terminator.status || "not_applicable")}">${terminatorStatus}</span>${terminatorPosition}</div>
+    </section>
+    <section class="file-inspection-section">
+      <h3>异常信息 <span class="anomaly-count">${anomalies.length}</span></h3>
+      ${anomalyCards || `<div class="strings-empty">未发现结构异常。</div>`}
+      <p class="file-range-help">字节偏移从 0 开始，结束偏移不包含在范围内。</p>
+    </section>`;
+}
+
+// Clicking an extracted string focuses its row after the full byte view loads.
+document.addEventListener("click", async (event) => {
+  const stringItem = event.target.closest(".strings-item");
+  if (!stringItem) return;
+  const offset = Number(stringItem.dataset.offset);
+  const pane = stringItem.closest(".strings-workspace");
+  if (!pane || !Number.isFinite(offset)) return;
+  pane.querySelectorAll(".hex-row.is-selected").forEach((row) => row.classList.remove("is-selected"));
+  let byteRow = pane.querySelector(`.hex-row[data-start="${Math.floor(offset / 16) * 16}"]`);
+  if (!byteRow && pane.dataset.submissionHash) {
+    await loadHexWindow(pane, offset);
+    byteRow = pane.querySelector(`.hex-row[data-start="${Math.floor(offset / 16) * 16}"]`);
+  }
+  if (byteRow) {
+    byteRow.classList.add("is-selected");
+    byteRow.scrollIntoView({ block: "nearest" });
+    pane.querySelector(".strings-selection-note")?.remove();
+  } else if (!pane.dataset.fullPreviewLoaded) {
+    let notice = pane.querySelector(".strings-selection-note");
+    if (!notice) {
+      notice = document.createElement("div");
+      notice.className = "strings-selection-note";
+      pane.querySelector(".hex-pane").appendChild(notice);
+    }
+    notice.textContent = t("Unable to load the complete hex view.");
+  }
+});
+
+function parseResult(result, legacyStringsPreview = null, submissionHash = "") {
   const resultDiv = document.getElementById("result-analyzers");
   resultDiv.innerHTML = "";
+  const twoColumnTools = new Set([
+    "file_anomalies",
+    "exiftool",
+    "binwalk",
+    "foremost",
+    "pngcheck",
+    "pcrt",
+    "identify",
+    "openstego",
+    "zsteg",
+  ]);
+  let twoColumnGrid = null;
 
   for (const tool of TOOL_ORDER) {
     if (!Object.keys(result).includes(tool)) {
@@ -554,18 +1171,38 @@ function parseResult(result) {
 
     const analyzer = document.createElement("div");
     analyzer.className = `analyzer a-${escapeHtml(tool)}`;
-    resultDiv.appendChild(analyzer);
+    analyzer.id = `analyzer-${tool}`;
+    if (twoColumnTools.has(tool)) {
+      if (!twoColumnGrid) {
+        twoColumnGrid = document.createElement("div");
+        twoColumnGrid.className = "analyzer-grid-two-col";
+        resultDiv.appendChild(twoColumnGrid);
+      }
+      twoColumnGrid.appendChild(analyzer);
+    } else {
+      resultDiv.appendChild(analyzer);
+    }
 
     const ok = result[tool]["status"] === "ok";
     const badge = ok
       ? `<span class="analyzer-badge badge-ok"><i class="fa fa-check"></i> ${t("Success")}</span>`
       : `<span class="analyzer-badge badge-empty"><i class="fa fa-minus"></i> ${t("No result")}</span>`;
-    analyzer.innerHTML += `<div class="analyzer-header"><h2>${analyzerTitle(tool)}</h2>${badge}</div>`;
+    let analyzerHtml = `<div class="analyzer-header"><h2>${analyzerTitle(tool)}</h2>${badge}</div>`;
 
     // Parse text output
-    if (typeof result[tool]["output"] === "string") {
+    if (tool === "strings" && Array.isArray(result[tool]["output"])) {
+      analyzerHtml += renderLegacyStringsOutput(result[tool]["output"], legacyStringsPreview, submissionHash);
+      // Keep large files windowed; fetching the entire file here would create
+      // tens of thousands of DOM rows and freeze the page.
+    } else if (tool === "strings" && result[tool]["output"] && typeof result[tool]["output"] === "object") {
+      analyzerHtml += renderStringsOutput(result[tool]["output"], submissionHash);
+      // Keep large files windowed; fetching the entire file here would create
+      // tens of thousands of DOM rows and freeze the page.
+    } else if (tool === "file_anomalies" && result[tool]["output"] && typeof result[tool]["output"] === "object") {
+      analyzerHtml += renderFileAnomalies(result[tool]["output"]);
+    } else if (typeof result[tool]["output"] === "string") {
       const output = escapeHtml(result[tool]["output"]);
-      analyzer.innerHTML += `<div class="alert alert-success" role="alert">${output}</div>`;
+      analyzerHtml += `<div class="alert alert-success" role="alert">${output}</div>`;
     } else if (Array.isArray(result[tool]["output"])) {
       if (result[tool]["output"].length > 0) {
         var code_content = `<div class="code-container position-relative mb-2">`;
@@ -574,20 +1211,20 @@ function parseResult(result) {
         code_content += `</code></pre>`;
         code_content += `<i class="fas fa-copy copy-icon"></i>`;
         code_content += `</div>`;
-        analyzer.innerHTML += code_content;
+        analyzerHtml += code_content;
       }
     } else if (typeof result[tool]["output"] === "object") {
       var table_content = `<div class="table-container">`;
       table_content += `<table>`;
       for (const key in result[tool]["output"]) {
-        table_content += `<tr><td>${escapeHtml(key)}</td>`;
+        const fieldLabel = tool === "exiftool" ? t(key) : key;
+        table_content += `<tr><td>${escapeHtml(fieldLabel)}</td>`;
         table_content += `<td>${escapeHtml(
           result[tool]["output"][key]
         )}</td></tr>`;
       }
       table_content += `</table>`;
-      table_content += `</table>`;
-      analyzer.innerHTML += table_content;
+      analyzerHtml += table_content;
     }
 
     // Parse images, downloads, ...
@@ -614,12 +1251,12 @@ function parseResult(result) {
           if (images) {
             title_h3 = capitalize(escapeHtml(channel));
             if (title_h3 != "Color Remapping"){
-              analyzer.innerHTML += `<h3>${t(title_h3)}</h3>`;
+              analyzerHtml += `<h3>${t(title_h3)}</h3>`;
             }
             for (const image of images) {
-              analyzer.innerHTML += `<div class='results_img'><img src='${escapeHtml(
+              analyzerHtml += `<div class='results_img'><img src='${escapeHtml(
                 image
-              )}' alt='${escapeHtml(tool + " " + channel)}' loading='lazy'/></div>`;
+              )}' alt='${escapeHtml(tool + " " + channel)}' loading='lazy' decoding='async'/></div>`;
             }
           }
         }
@@ -627,20 +1264,20 @@ function parseResult(result) {
 
       if ("image" in result[tool]) {
         // Parse image output
-        analyzer.innerHTML += `<div class='results_img'><img src='${escapeHtml(
+        analyzerHtml += `<div class='results_img'><img src='${escapeHtml(
           result[tool]["image"]
-        )}' alt='${escapeHtml(tool)}' loading='lazy'/></div>`;
+        )}' alt='${escapeHtml(tool)}' loading='lazy' decoding='async'/></div>`;
       }
 
       if ("png_images" in result[tool]) {
         for (const image of result[tool]["png_images"]) {
-          analyzer.innerHTML += `<div class='results_img'><img src='${escapeHtml(image)}' alt='${escapeHtml(tool)}' loading='lazy'/></div>`;
+          analyzerHtml += `<div class='results_img'><img src='${escapeHtml(image)}' alt='${escapeHtml(tool)}' loading='lazy' decoding='async'/></div>`;
         }
       }
 
       if ("download" in result[tool]) {
         // Parse download link
-        analyzer.innerHTML += `<br/><a href="${escapeHtml(
+        analyzerHtml += `<br/><a href="${escapeHtml(
           result[tool]["download"]
         )}" target="_blank" class="btn btn-primary mt-2"><i class="fa fa-download"></i> ${t("Download file")}</a>`;
       }
@@ -649,17 +1286,46 @@ function parseResult(result) {
     // Render error and note inside the analyzer's own section (previously
     // these were appended as detached alerts, disconnected from the heading).
     if (result[tool]["error"] && (/[^\s]/.test(result[tool]["error"]))) {
-      analyzer.innerHTML +=
+      analyzerHtml +=
         `<div class="alert alert-danger mb-0" role="alert">` +
         `<pre class="mb-0">${escapeHtml(result[tool]["error"].trim())}</pre></div>`;
     }
 
     if (result[tool]["note"] && (/[^\s]/.test(result[tool]["note"]))) {
-      analyzer.innerHTML +=
+      analyzerHtml +=
         `<div class="alert alert-info mb-0 mt-2" role="alert">` +
         `${escapeHtml(result[tool]["note"].trim())}</div>`;
     }
+
+    // Assemble once so a result with dozens of images does not repeatedly
+    // parse the growing analyzer subtree or restart image requests.
+    analyzer.innerHTML = analyzerHtml;
+    if (tool === "strings" && result[tool]["output"] && typeof result[tool]["output"] === "object") {
+      const list = analyzer.querySelector(".strings-list");
+      if (list) {
+        const output = result[tool]["output"];
+        list._allStrings = Array.isArray(output)
+          ? output.map((text) => ({ offset: "", text: String(text ?? "") }))
+          : Array.isArray(output.strings)
+            ? output.strings
+            : [];
+      }
+    }
   }
+}
+
+async function renderResultData(resultData, submissionHash) {
+  const results = resultData?.results;
+  const legacyStrings = results?.strings;
+  let preview = null;
+  if (legacyStrings?.status === "ok" && Array.isArray(legacyStrings.output)) {
+    try {
+      preview = await loadLegacyHexPreview(submissionHash);
+    } catch (error) {
+      console.error("Failed to load legacy Strings hex preview:", error);
+    }
+  }
+  parseResult(results, preview, submissionHash);
 }
 
 // Poll status of a submission. Polls are sequential (the next one is only
@@ -669,16 +1335,104 @@ const POLL_START_INTERVAL_MS = 1000;
 const POLL_MAX_INTERVAL_MS = 10000;
 const POLL_MAX_TOTAL_MS = 15 * 60 * 1000; // longer than any RQ job timeout
 
-function scheduleNextPoll(submission_hash, startedAt, interval) {
+function scheduleNextPoll(submission_hash, startedAt, interval, submittedKeyword = "") {
   if (Date.now() - startedAt > POLL_MAX_TOTAL_MS) {
     showDanger(t("❌ The analysis is taking too long. Please reload the page to check again."), true);
     return;
   }
   const next = Math.min(interval * 1.2, POLL_MAX_INTERVAL_MS);
-  setTimeout(() => pollStatus(submission_hash, startedAt, next), interval);
+  setTimeout(() => pollStatus(submission_hash, startedAt, next, submittedKeyword), interval);
 }
 
-async function pollStatus(submission_hash, startedAt, interval) {
+const resultEtags = new Map();
+
+async function fetchResultSnapshot(submissionHash) {
+  const headers = {};
+  const etag = resultEtags.get(submissionHash);
+  if (etag) headers["If-None-Match"] = etag;
+  const response = await fetch(`/result/${submissionHash}`, { headers });
+  if (response.status === 304) return { unchanged: true };
+  const nextEtag = response.headers.get("ETag");
+  if (nextEtag) resultEtags.set(submissionHash, nextEtag);
+  return response.json();
+}
+
+async function renderKeywordMatches(submissionHash, submittedKeyword = "") {
+  const keyword =
+    submittedKeyword ||
+    sessionStorage.getItem(`aperisolveKeyword:${submissionHash}`) ||
+    "";
+  if (!keyword) return;
+  try {
+    const params = new URLSearchParams({ q: keyword });
+    const response = await fetch(`/keyword-search/${encodeURIComponent(submissionHash)}?${params}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const infos = document.getElementById("result-infos");
+    if (!infos) return;
+    infos.querySelector(".keyword-results")?.remove();
+    const section = document.createElement("section");
+    section.className = "keyword-results card p-3 mb-3";
+    const title = document.createElement("h2");
+    title.className = "h5 mb-2";
+    title.textContent = `${t("Keyword matches")}: ${keyword}`;
+    section.appendChild(title);
+    if (!data.matches?.length) {
+      const empty = document.createElement("p");
+      empty.className = "mb-0 text-light-emphasis";
+      empty.textContent = t("No matches found in the uploaded file or analysis results.");
+      section.appendChild(empty);
+    } else {
+      const list = document.createElement("ul");
+      list.className = "mb-0";
+      for (const match of data.matches) {
+        const item = document.createElement("li");
+        const link = document.createElement("a");
+        const targetTool = match.tool === "original" ? "strings" : match.tool;
+        link.href = `#analyzer-${encodeURIComponent(targetTool)}`;
+        const matchLabel = match.tool === "original"
+          ? t("Original file")
+          : capitalize(String(match.tool).replace(/_/g, " "));
+        const encodings = match.encodings.map((encoding) => t(encoding)).join(", ");
+        link.textContent = `${matchLabel} · ${encodings}`;
+        if (match.tool === "original") {
+          const firstOffset = Object.values(match.offsets || {}).flat()[0];
+          if (Number.isFinite(firstOffset)) link.dataset.keywordOffset = String(firstOffset);
+        }
+        item.appendChild(link);
+        list.appendChild(item);
+      }
+      section.appendChild(list);
+    }
+    infos.prepend(section);
+  } catch (error) {
+    console.error("Failed to search keyword matches:", error);
+  }
+}
+
+document.addEventListener("click", async (event) => {
+  const link = event.target.closest("a[data-keyword-offset]");
+  if (!link) return;
+  const offset = Number(link.dataset.keywordOffset);
+  const workspace = document.querySelector(".strings-workspace");
+  if (!workspace || !Number.isFinite(offset)) return;
+  event.preventDefault();
+  document.getElementById("analyzer-strings")?.scrollIntoView({
+    behavior: "smooth",
+    block: "start",
+  });
+  try {
+    await loadHexWindow(workspace, offset);
+    const rowStart = Math.floor(offset / 16) * 16;
+    const row = workspace.querySelector(`.hex-row[data-start="${rowStart}"]`);
+    row?.classList.add("is-search-current");
+    row?.scrollIntoView({ behavior: "smooth", block: "center" });
+  } catch (error) {
+    console.error("Failed to locate keyword in the hex view:", error);
+  }
+});
+
+async function pollStatus(submission_hash, startedAt, interval, submittedKeyword = "") {
   if (!window.location.pathname.endsWith(`/${submission_hash}`)) {
     window.history.pushState({}, "", `/${submission_hash}`);
   }
@@ -693,36 +1447,40 @@ async function pollStatus(submission_hash, startedAt, interval) {
   } catch (error) {
     // Network blip: keep the spinner and retry instead of dying silently.
     console.dir(error);
-    scheduleNextPoll(submission_hash, startedAt, interval);
+    scheduleNextPoll(submission_hash, startedAt, interval, submittedKeyword);
     return;
   }
 
   if (statusData.status === "completed") {
     let resultData;
     try {
-      const resultResp = await fetch(`/result/${submission_hash}`);
-      resultData = await resultResp.json();
+      resultData = await fetchResultSnapshot(submission_hash);
     } catch (error) {
       console.dir(error);
-      scheduleNextPoll(submission_hash, startedAt, interval);
+      scheduleNextPoll(submission_hash, startedAt, interval, submittedKeyword);
       return;
     }
-    fetchImageInfo(submission_hash);
+    await fetchImageInfo(submission_hash);
+    await renderKeywordMatches(submission_hash, submittedKeyword);
+    if (resultData.unchanged) return;
     if ("error" in resultData) {
       showWarning(`❌ ${resultData.error}`, true);
     } else if ("results" in resultData) {
-      parseResult(resultData.results);
+      await renderResultData(resultData, submission_hash);
     }
   } else if (statusData.status === "error") {
     showDanger(t("❌ Error during the analysis."), true);
   } else {
     // Render partial results while the analysis is still running.
     try {
-      const resultResp = await fetch(`/result/${submission_hash}`);
-      const resultData = await resultResp.json();
+      const resultData = await fetchResultSnapshot(submission_hash);
+      if (resultData.unchanged) {
+        scheduleNextPoll(submission_hash, startedAt, interval, submittedKeyword);
+        return;
+      }
       if ("results" in resultData) {
-        fetchImageInfo(submission_hash);
-        parseResult(resultData.results);
+        await fetchImageInfo(submission_hash);
+        await renderResultData(resultData, submission_hash);
       } else {
         renderAnalyzing();
       }
@@ -730,7 +1488,7 @@ async function pollStatus(submission_hash, startedAt, interval) {
       renderAnalyzing();
       console.dir(error);
     }
-    scheduleNextPoll(submission_hash, startedAt, interval);
+    scheduleNextPoll(submission_hash, startedAt, interval, submittedKeyword);
   }
 }
 
@@ -804,6 +1562,7 @@ if (browseBtn) {
       const fileInput = document.getElementById("image");
       const passwordInput = document.getElementById("password");
       const deepCheckbox = document.getElementById("deep");
+      const keywordInput = document.getElementById("keyword");
       const progressContainer = document.getElementById("progress-container");
       const progressBar = document.getElementById("progress-bar");
 
@@ -816,7 +1575,7 @@ if (browseBtn) {
       formData.append("image", fileInput.files[0]);
       formData.append("password", passwordInput.value);
       formData.append("deep", deepCheckbox.checked);
-
+      const keyword = keywordInput?.value.trim() || "";
       const xhr = new XMLHttpRequest();
       xhr.open("POST", "/upload", true);
 
@@ -839,7 +1598,12 @@ if (browseBtn) {
           try {
             const response = JSON.parse(xhr.responseText);
             if (response.submission_hash) {
-              pollStatus(response.submission_hash);
+              if (keyword) {
+                sessionStorage.setItem(`aperisolveKeyword:${response.submission_hash}`, keyword);
+              } else {
+                sessionStorage.removeItem(`aperisolveKeyword:${response.submission_hash}`);
+              }
+              pollStatus(response.submission_hash, undefined, undefined, keyword);
             } else {
               showDanger(
                 t("❌ Invalid server response: missing submission_hash."),

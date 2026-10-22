@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
-{% block title %}{{ _("Steganography decision tree") }} - Aperi'Solve{% endblock %}
-{% block meta_description %}{{ _("An interactive steganography decision tree: identify the file type, then work each branch top to bottom. Hover any step for the command; download as PNG or PDF.") }}{% endblock %}
+{% block title %}隐写术排查决策树 - Aperi'Solve{% endblock %}
+{% block meta_description %}交互式隐写术排查决策树：识别文件类型后按分支逐步检查。悬停查看命令，可下载 PNG 或 PDF。{% endblock %}
 {% block meta %}
 <link rel="canonical" href="{{ base_url }}{{ canonical_path }}">
 {% if is_fallback %}<meta name="robots" content="noindex">{% endif %}
@@ -13,14 +13,14 @@
 <div class="ds-page">
   <div class="ds-toolbar">
     <a class="ds-back" href="{{ lang_prefix }}/cheatsheet">
-      <i class="fa fa-arrow-left"></i><span>{{ _("Cheatsheet") }}</span>
+      <i class="fa fa-arrow-left"></i><span>速查表</span>
     </a>
-    <h1 class="ds-title">{{ _("Steganography decision tree") }}</h1>
+    <h1 class="ds-title">隐写术排查决策树</h1>
     <div class="ds-actions">
-      <div class="ds-zoom" role="group" aria-label="{{ _("Zoom") }}">
-        <button type="button" id="ds-zoom-out" class="ds-btn" aria-label="{{ _("Zoom out") }}"><i class="fa fa-minus"></i></button>
-        <button type="button" id="ds-zoom-reset" class="ds-btn ds-btn-reset">{{ _("Fit") }}</button>
-        <button type="button" id="ds-zoom-in" class="ds-btn" aria-label="{{ _("Zoom in") }}"><i class="fa fa-plus"></i></button>
+      <div class="ds-zoom" role="group" aria-label="缩放">
+        <button type="button" id="ds-zoom-out" class="ds-btn" aria-label="缩小"><i class="fa fa-minus"></i></button>
+        <button type="button" id="ds-zoom-reset" class="ds-btn ds-btn-reset">适应窗口</button>
+        <button type="button" id="ds-zoom-in" class="ds-btn" aria-label="放大"><i class="fa fa-plus"></i></button>
       </div>
       <button type="button" id="ds-dl-png" class="ds-btn ds-btn-dl"><i class="fa fa-image"></i><span>PNG</span></button>
       <button type="button" id="ds-dl-pdf" class="ds-btn ds-btn-dl"><i class="fa fa-file-pdf"></i><span>PDF</span></button>
@@ -33,7 +33,7 @@
   </div>
   <p class="ds-hint">
     <i class="fa fa-circle-info"></i>
-    {{ _("Hover or tap a step for the command and details · drag to pan · scroll to zoom") }}
+    悬停或点击步骤查看命令和说明 · 拖动平移 · 滚动缩放
   </p>
 </div>
 <div class="ds-tooltip" id="ds-tooltip" role="tooltip" hidden></div>

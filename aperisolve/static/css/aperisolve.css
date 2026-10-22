@@ -304,6 +304,33 @@ form {
     border-top: 1px solid rgba(159, 239, 0, 0.12);
 }
 
+/* Compact the file and metadata analyzers into paired rows. Grid's automatic
+   row sizing uses the taller analyzer in each row as the shared row height. */
+.analyzer-grid-two-col {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    column-gap: var(--spacing-xl);
+    row-gap: var(--spacing-md);
+}
+
+.analyzer-grid-two-col > .analyzer {
+    min-width: 0;
+    margin: 0;
+    padding-top: var(--spacing-md);
+}
+
+.analyzer-grid-two-col > .analyzer:first-child {
+    border-top: none;
+    padding-top: 0;
+}
+
+@media screen and (max-width: 48rem) {
+    .analyzer-grid-two-col {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 .analyzer:first-child {
     border-top: none;
     padding-top: 0;
@@ -589,6 +616,351 @@ pre {
     color: #000;
 }
 
+/* WinHex-like split view for extracted strings and their byte locations. */
+.strings-view-intro,
+.strings-view-note,
+.strings-selection-note {
+    color: var(--text-dim);
+    font-size: 0.86rem;
+    margin: 0.5rem 0;
+}
+
+.strings-view-note,
+.strings-selection-note {
+    border-left: 2px solid var(--theme-green);
+    padding: 0.35rem 0.65rem;
+    background: rgba(159, 239, 0, 0.06);
+}
+
+.strings-workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(18rem, 1fr);
+    gap: 0.75rem;
+    align-items: stretch;
+}
+
+.strings-workspace,
+.strings-workspace * {
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+.strings-pane {
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--green-line);
+    border-radius: var(--border-radius);
+    background: rgba(5, 10, 17, 0.82);
+}
+
+.strings-pane-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.65rem 0.8rem;
+    color: var(--theme-green);
+    font-weight: 700;
+    border-bottom: 1px solid var(--green-line);
+}
+
+.strings-pane-heading span,
+.strings-pane-hint {
+    color: var(--text-dim);
+    font-size: 0.78rem;
+    font-weight: 400;
+}
+
+.strings-pane-hint {
+    margin: 0;
+    padding: 0.45rem 0.7rem;
+}
+
+.strings-search-row {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.55rem 0.7rem;
+    border-bottom: 1px solid rgba(159, 239, 0, 0.12);
+}
+
+.strings-search-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: 100%;
+    padding: 0.42rem 0.6rem;
+    color: #d7e0eb;
+    background: #080e18;
+    border: 1px solid rgba(159, 239, 0, 0.22);
+    border-radius: 0.35rem;
+    font: 0.78rem/1.4 "Fira Code", ui-monospace, monospace;
+}
+
+.strings-search-input::placeholder {
+    color: #8291a5;
+}
+
+.strings-search-input:focus {
+    border-color: var(--theme-green);
+    outline: 2px solid rgba(159, 239, 0, 0.14);
+}
+
+.strings-search-nav {
+    flex: 0 0 auto;
+    min-width: 3rem;
+    height: 2rem;
+    padding: 0 0.45rem;
+    color: var(--theme-green);
+    background: rgba(159, 239, 0, 0.06);
+    border: 1px solid rgba(159, 239, 0, 0.24);
+    border-radius: 0.35rem;
+    font-size: 0.72rem;
+    white-space: nowrap;
+}
+
+.strings-search-nav:hover:not(:disabled),
+.strings-search-nav:focus-visible {
+    color: #071006;
+    background: var(--theme-green);
+    outline: 2px solid rgba(159, 239, 0, 0.2);
+}
+
+.strings-search-nav:disabled {
+    color: #647082;
+    background: rgba(255, 255, 255, 0.025);
+    border-color: rgba(255, 255, 255, 0.08);
+    cursor: not-allowed;
+}
+
+.strings-search-count {
+    flex: 0 0 auto;
+    color: var(--text-dim);
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.hex-grid,
+.strings-list {
+    max-height: 26rem;
+    overflow: auto;
+    scrollbar-color: rgba(159, 239, 0, 0.35) rgba(0, 0, 0, 0.2);
+}
+
+.hex-row {
+    display: grid;
+    grid-template-columns: 5.8rem minmax(18rem, 1fr) minmax(8rem, 0.5fr);
+    gap: 0.65rem;
+    min-width: 39rem;
+    padding: 0.18rem 0.7rem;
+    color: #d7e0eb;
+    font: 0.78rem/1.5 "Fira Code", ui-monospace, monospace;
+    white-space: pre;
+}
+
+.hex-grid-heading {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding-top: 0.45rem;
+    padding-bottom: 0.45rem;
+    color: var(--theme-green);
+    background: #0b121d;
+    border-bottom: 1px solid rgba(159, 239, 0, 0.16);
+}
+
+.hex-row:not(.hex-grid-heading):hover,
+.hex-row.is-selected {
+    background: rgba(159, 239, 0, 0.12);
+}
+
+.hex-row.is-search-current,
+.hex-row.is-search-located {
+    background: rgba(159, 239, 0, 0.24);
+    box-shadow: inset 3px 0 var(--theme-green);
+}
+
+.hex-offset {
+    color: #8ba5c2;
+}
+
+.hex-ascii {
+    color: #d0d7de;
+}
+
+.strings-item {
+    display: grid;
+    grid-template-columns: 6.3rem minmax(0, 1fr);
+    width: 100%;
+    gap: 0.6rem;
+    padding: 0.32rem 0.7rem;
+    text-align: left;
+    color: #d7e0eb;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+    font: 0.78rem/1.5 "Fira Code", ui-monospace, monospace;
+}
+
+.strings-item:hover,
+.strings-item:focus-visible {
+    color: #fff;
+    background: rgba(159, 239, 0, 0.12);
+    outline: none;
+}
+
+.strings-item.is-search-current {
+    color: #fff;
+    background: rgba(159, 239, 0, 0.24);
+    box-shadow: inset 3px 0 var(--theme-green);
+}
+
+.strings-load-more {
+    width: calc(100% - 0.8rem);
+    margin: 0.4rem;
+    padding: 0.55rem;
+    color: var(--theme-green);
+    background: rgba(159, 239, 0, 0.06);
+    border: 1px solid rgba(159, 239, 0, 0.24);
+    border-radius: 0.35rem;
+}
+
+.strings-load-more:hover,
+.strings-load-more:focus-visible {
+    color: #071006;
+    background: var(--theme-green);
+    outline: 2px solid rgba(159, 239, 0, 0.2);
+}
+
+.strings-item-offset {
+    color: #8ba5c2;
+}
+
+.strings-item-text {
+    overflow-wrap: anywhere;
+}
+
+.strings-empty {
+    padding: 0.8rem;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+}
+
+/* File signature / end-marker inspection. */
+.file-inspection-summary {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    padding: 0.8rem 1rem;
+    border: 1px solid var(--green-line);
+    border-radius: var(--border-radius);
+    background: rgba(159, 239, 0, 0.06);
+}
+
+.file-inspection-summary span,
+.file-range-help {
+    color: var(--text-dim);
+    font-size: 0.82rem;
+}
+
+.file-inspection-section {
+    margin-top: 1.15rem;
+}
+
+.file-inspection-section h3 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.55rem;
+    font-size: 1rem;
+}
+
+.signature-table {
+    font-size: 0.84rem;
+}
+
+.signature-table code,
+.terminator-row code {
+    color: #d2a8ff;
+    white-space: nowrap;
+}
+
+.signature-location,
+.terminator-status,
+.anomaly-count {
+    display: inline-block;
+    padding: 0.12rem 0.5rem;
+    border-radius: 1rem;
+    font-size: 0.73rem;
+    background: rgba(138, 147, 163, 0.12);
+    color: #b9c1ce;
+    white-space: nowrap;
+}
+
+.signature-location.is-header,
+.terminator-status.status-found {
+    color: var(--theme-green);
+    background: rgba(159, 239, 0, 0.1);
+}
+
+.signature-location.is-embedded,
+.terminator-status.status-missing {
+    color: #ffc66d;
+    background: rgba(255, 198, 109, 0.1);
+}
+
+.terminator-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.65rem 0.8rem;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--border-neutral);
+    border-radius: var(--border-radius);
+}
+
+.terminator-row > span:last-child {
+    margin-left: auto;
+    color: #9fb2c9;
+    font: 0.8rem "Fira Code", ui-monospace, monospace;
+}
+
+.file-anomaly-card {
+    margin-bottom: 0.55rem;
+    padding: 0.65rem 0.8rem;
+    border-left: 3px solid #ffc66d;
+    border-radius: 0.25rem;
+    background: rgba(255, 198, 109, 0.065);
+}
+
+.file-anomaly-card.severity-info {
+    border-left-color: #79c0ff;
+    background: rgba(121, 192, 255, 0.06);
+}
+
+.file-anomaly-title {
+    font-weight: 700;
+}
+
+.file-anomaly-range {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    margin-top: 0.22rem;
+    color: #a9bdd2;
+    font: 0.76rem "Fira Code", ui-monospace, monospace;
+}
+
+.file-anomaly-card p {
+    margin: 0.38rem 0 0;
+    color: #c5cfdb;
+    font-size: 0.83rem;
+}
+
+.file-range-help {
+    margin: 0.5rem 0 0;
+}
+
 #upload-form {
     transition: height 0.4s ease, padding 0.4s ease, margin 0.4s ease;
     overflow: hidden;
@@ -654,6 +1026,16 @@ td {
     padding: var(--spacing-md);
     box-sizing: border-box;
     min-width: 9.375rem;
+}
+
+/* Color remapping produces a sequence of equal-sized channel maps. Keep eight
+   thumbnails on each desktop row instead of using the generic four-column
+   result layout. */
+.a-color_remapping .results_img,
+.a-decomposer .results_img {
+    width: 12.5%;
+    min-width: 0;
+    padding: var(--spacing-sm);
 }
 
 .a-pcrt .results_img {
@@ -823,6 +1205,13 @@ main.flex-grow-1 {
     padding-bottom: var(--spacing-xl);
 }
 
+@media screen and (min-width: 1400px) {
+    main.flex-grow-1 > .container:has(> #result) {
+        width: min(96vw, 1800px);
+        max-width: min(96vw, 1800px);
+    }
+}
+
 footer {
     position: relative;
     z-index: 1;
@@ -945,6 +1334,11 @@ footer::before {
 
 /* Large phones and small tablets */
 @media screen and (max-width: 48rem) {
+    .a-color_remapping .results_img,
+    .a-decomposer .results_img {
+        width: 25%;
+    }
+
     html {
         font-size: 14px;
     }
@@ -953,6 +1347,15 @@ footer::before {
         margin-top: var(--spacing-lg) !important;
         padding-left: var(--spacing-md);
         padding-right: var(--spacing-md);
+    }
+
+    .strings-workspace {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .hex-grid,
+    .strings-list {
+        max-height: 20rem;
     }
 
     .logo-img {
@@ -1038,6 +1441,11 @@ footer::before {
 
 /* Phones */
 @media screen and (max-width: 36rem) {
+    .a-color_remapping .results_img,
+    .a-decomposer .results_img {
+        width: 50%;
+    }
+
     html {
         font-size: 13px;
     }
@@ -2056,4 +2464,15 @@ footer::before {
 .lang-option.is-active .lang-name {
     color: var(--theme-green);
     font-weight: 500;
+}
+
+
+/* Keep analyzer jump targets clear of the sticky browser scroll position. */
+#result-analyzers .analyzer {
+    scroll-margin-top: 1rem;
+}
+
+.keyword-results a {
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
 }

@@ -1,158 +1,158 @@
 {
   "root": {
-    "title": "ANY FILE",
-    "sub": "run first:  file · exiftool · strings · binwalk",
-    "detail": "Identify the real type with `file` (never trust the extension), then pick the branch below. On every file first: `exiftool -a -u -g1`, `strings -n 8` (add `-e l` / `-e b` for UTF-16), and `binwalk`."
+    "title": "任意文件",
+    "sub": "先检查：file · exiftool · strings · binwalk",
+    "detail": "先用 file（文件类型识别工具）识别真实格式，不要轻信扩展名，再选择下方分支。每个文件都先运行 exiftool（元数据查看工具）-a -u -g1、strings（字符串提取工具）-n 8 （UTF-16 文本可加 -e l / -e b）以及 binwalk（文件特征扫描工具）。"
   },
   "branches": [
     {
-      "label": "PNG / BMP",
+      "label": "PNG / BMP 图像",
       "color": "#9fef00",
       "steps": [
         {
           "n": 1,
           "cmd": "zsteg -a",
-          "hint": "LSB text / files",
+          "hint": "LSB 文本 / 文件",
           "full": "zsteg -a file.png",
-          "detail": "Scan every common LSB channel/bit-order combo for hidden text or files; extract a line with zsteg -E.",
+          "detail": "PNG（便携式网络图形）/ BMP（位图）中可能藏有数据；使用 zsteg（图像隐写分析工具）扫描常见 LSB（最低有效位）通道和位序，查找隐藏文本或文件，再用 zsteg -E 提取可疑行。",
           "href": "/wiki/tools/zsteg"
         },
         {
           "n": 2,
           "cmd": "pngcheck -vtp7f",
-          "hint": "CRC / IHDR size",
+          "hint": "CRC / IHDR 尺寸",
           "full": "pngcheck -vtp7f file.png",
-          "detail": "A CRC error in IHDR means an edited header; a shrunken width/height hides pixels below the visible image.",
+          "detail": "IHDR（图像头数据块）中的 CRC（循环冗余校验）错误表示文件头可能被改过；缩小宽高会隐藏可见区域下方的像素。",
           "href": "/wiki/tools/pngcheck"
         },
         {
           "n": 3,
-          "cmd": "bit planes",
-          "hint": "all channels + MSB",
-          "full": "decomposer / Stegsolve",
-          "detail": "Browse every bit plane and every channel including alpha; try MSB and column-major order, not just RGB LSB.",
+          "cmd": "位平面",
+          "hint": "全通道 + MSB",
+          "full": "decomposer（位平面分解器）/ Stegsolve（隐写图像查看工具）",
+          "detail": "浏览全部位平面和通道（包括 Alpha 透明度）；尝试 MSB（最高有效位）和按列读取，不要只看 RGB LSB。",
           "href": "/wiki/tools/decomposer"
         },
         {
           "n": 4,
-          "cmd": "data after IEND",
-          "hint": "carve the trailer",
+          "cmd": "IEND 后附加数据",
+          "hint": "提取文件尾部",
           "full": "binwalk -e file.png",
-          "detail": "Data appended after the IEND chunk — carve it with binwalk/foremost or by byte offset.",
+          "detail": "IEND 数据块之后可能附加了数据；可用 binwalk/foremost（文件雕刻工具）或按字节偏移提取。",
           "href": "/wiki/tools/foremost"
         },
         {
           "n": 5,
-          "cmd": "palette remap",
-          "hint": "indexed PNG",
-          "full": "color remapping / randomize palette",
-          "detail": "Indexed PNGs can hide an image in the palette; randomize or remap it to reveal the drawing.",
+          "cmd": "调色板重映射",
+          "hint": "索引色 PNG",
+          "full": "Color remapping（颜色映射）/ 随机打乱调色板",
+          "detail": "索引色 PNG 可能把图像藏在调色板中；随机打乱或重映射调色板即可显现隐藏图案。",
           "href": "/wiki/tools/color_remapping"
         },
         {
           "n": 6,
           "cmd": "OpenStego",
-          "hint": "randomized LSB",
+          "hint": "随机化 LSB",
           "full": "openstego extract -sf file.png",
-          "detail": "Randomized-LSB payloads that zsteg misses; needs OpenStego (and maybe a key).",
+          "detail": "处理 zsteg 未发现的随机化 LSB 载荷；需要 OpenStego（开源隐写工具），有时还需要密钥。",
           "href": "/wiki/tools/openstego"
         }
       ]
     },
     {
-      "label": "JPEG",
+      "label": "JPEG 图像",
       "color": "#ffa657",
       "steps": [
         {
           "n": 1,
           "cmd": "steghide -p ''",
-          "hint": "try empty pass",
+          "hint": "先试空密码",
           "full": "steghide extract -sf file.jpg -p ''",
-          "detail": "steghide is the most common JPEG tool; try the empty password first, then the filename / challenge name.",
+          "detail": "JPEG（联合图像专家组格式）中常见 steghide（隐写载荷提取工具）；先试空密码，再试文件名或挑战名称。",
           "href": "/wiki/tools/steghide"
         },
         {
           "n": 2,
           "cmd": "stegseek rockyou",
-          "hint": "crack passphrase",
+          "hint": "破解密码",
           "full": "stegseek file.jpg rockyou.txt",
-          "detail": "Cracks a steghide passphrase against rockyou in seconds.",
+          "detail": "stegseek 可用 rockyou 字典在数秒内尝试破解 steghide 密码。",
           "href": "/wiki/tools/stegseek"
         },
         {
           "n": 3,
           "cmd": "outguess / jsteg",
-          "hint": "jphide",
+          "hint": "JPHide / 其他工具",
           "full": "outguess -r file.jpg out.txt",
-          "detail": "If it isn't steghide, try OutGuess, jsteg, or JPHide (jpseek). zsteg does NOT work on JPEG.",
+          "detail": "如果不是 steghide 载荷，可尝试 OutGuess、jsteg 或 JPHide（jpseek）；zsteg 不适用于 JPEG。",
           "href": "/wiki/tools/outguess"
         },
         {
           "n": 4,
           "cmd": "stegdetect",
-          "hint": "statistical",
+          "hint": "统计检测",
           "full": "stegdetect file.jpg",
-          "detail": "Statistical detector that hints which JPEG tool was used.",
+          "detail": "统计检测器，可提示 JPEG 文件可能使用了哪种隐写工具。",
           "href": "/wiki/techniques/images"
         }
       ]
     },
     {
-      "label": "GIF / APNG",
+      "label": "GIF / APNG 动图",
       "color": "#d2a8ff",
       "steps": [
         {
           "n": 1,
-          "cmd": "extract frames",
+          "cmd": "提取帧",
           "hint": "ffmpeg -vsync 0",
           "full": "ffmpeg -i file.gif -vsync 0 out/f%d.png",
-          "detail": "Animations can carry zero-duration frames; extract every frame then run the PNG checklist on them.",
+          "detail": "GIF（图形交换格式）/ APNG（动态图像扩展）动画可能包含零时长帧；先提取每一帧，再逐帧运行 PNG 检查清单。",
           "href": "/wiki/techniques/images"
         },
         {
           "n": 2,
-          "cmd": "frame durations",
-          "hint": "morse / binary",
+          "cmd": "帧持续时间",
+          "hint": "摩斯码 / 二进制",
           "full": "identify -verbose file.gif",
-          "detail": "Per-frame delays can encode morse / binary / ASCII.",
+          "detail": "每帧延迟可能编码 Morse（摩斯电码）/ 二进制 / ASCII 文本。",
           "href": "/wiki/tools/identify"
         },
         {
           "n": 3,
-          "cmd": "diff frames",
-          "hint": "consecutive",
-          "full": "compare frame N vs N+1",
-          "detail": "A payload can live in the difference between two near-identical frames.",
+          "cmd": "比较帧差异",
+          "hint": "相邻帧",
+          "full": "比较第 N 帧与第 N+1 帧",
+          "detail": "载荷可能藏在两张几乎相同的相邻帧的差异中。",
           "href": "/wiki/techniques/images"
         },
         {
           "n": 4,
-          "cmd": "palette tricks",
+          "cmd": "调色板技巧",
           "hint": "",
-          "full": "randomize / remap palette",
-          "detail": "Same indexed-color palette tricks as PNG.",
+          "full": "随机打乱 / 重映射调色板",
+          "detail": "与 PNG 相同的索引色调色板检查技巧。",
           "href": "/wiki/tools/color_remapping"
         }
       ]
     },
     {
-      "label": "AUDIO",
+      "label": "音频",
       "color": "#79c0ff",
       "steps": [
         {
           "n": 1,
-          "cmd": "spectrogram FIRST",
+          "cmd": "先看频谱图",
           "hint": "Audacity / sox",
           "full": "sox file.wav -n spectrogram -o spec.png",
-          "detail": "View the frequency domain first — text and QR codes are often drawn there; check above 20 kHz and below 20 Hz.",
+          "detail": "优先查看频率域；文字和 QR（快速响应码）经常被绘制在频谱图中，也要检查 20 kHz 以上和 20 Hz 以下。",
           "href": "/wiki/tools/spectrogram"
         },
         {
           "n": 2,
-          "cmd": "waveform",
-          "hint": "→ Morse",
+          "cmd": "波形",
+          "hint": "解读 Morse",
           "full": "audacity file.wav",
-          "detail": "Obvious on/off bursts in the waveform decode as Morse.",
+          "detail": "波形中明显的开关脉冲可能组成 Morse（摩斯电码）。",
           "href": "/wiki/techniques/audio"
         },
         {
@@ -160,7 +160,7 @@
           "cmd": "WAV LSB",
           "hint": "stegolsb wavsteg",
           "full": "stegolsb wavsteg -r -i file.wav -o out.txt -n 1 -b 1000",
-          "detail": "LSB payloads in WAV samples; they often don't start at sample 0.",
+          "detail": "WAV（波形音频格式）样本中可能藏有 LSB 载荷；数据通常并非从样本 0 开始。",
           "href": "/wiki/techniques/audio"
         },
         {
@@ -168,7 +168,7 @@
           "cmd": "SSTV / DTMF / FSK",
           "hint": "QSSTV / minimodem",
           "full": "minimodem --rx 1200",
-          "detail": "Decode images with QSSTV, phone tones with a DTMF decoder, modem tones with minimodem / multimon-ng.",
+          "detail": "SSTV（慢扫描电视）、DTMF（双音多频）和 FSK（频移键控）信号可分别用 QSSTV、DTMF 解码器及 minimodem / multimon-ng 处理。",
           "href": "/wiki/techniques/audio"
         },
         {
@@ -176,213 +176,215 @@
           "cmd": "steghide",
           "hint": "DeepSound",
           "full": "steghide extract -sf file.wav",
-          "detail": "Passworded containers: steghide (WAV/AU) or DeepSound.",
+          "detail": "带密码的容器可用 steghide（支持 WAV/AU）或 DeepSound 提取。",
           "href": "/wiki/tools/steghide"
         }
       ]
     },
     {
-      "label": "VIDEO",
+      "label": "视频",
       "color": "#f778ba",
       "steps": [
         {
           "n": 1,
-          "cmd": "ffprobe streams",
-          "hint": "count tracks",
+          "cmd": "ffprobe 轨道",
+          "hint": "统计轨道",
           "full": "ffprobe file.mp4",
-          "detail": "An extra subtitle, attachment or data track is often the whole trick.",
+          "detail": "MP4（MPEG-4 视频格式）中的额外字幕、附件或数据轨道往往就是关键线索。",
           "href": "/wiki/techniques/video"
         },
         {
           "n": 2,
-          "cmd": "extract frames",
+          "cmd": "提取帧",
           "hint": "ffmpeg -vsync 0",
           "full": "ffmpeg -i file.mp4 -vsync 0 out/f%05d.png",
-          "detail": "Run the PNG checklist (zsteg, bit planes) on the lossless frames.",
+          "detail": "对提取出的无损帧运行 PNG 检查清单（zsteg、位平面）。",
           "href": "/wiki/techniques/video"
         },
         {
           "n": 3,
-          "cmd": "subtitle / attach",
-          "hint": "-map 0:s / dump",
+          "cmd": "字幕 / 附件",
+          "hint": "-map 0:s / 提取",
           "full": "ffmpeg -i file.mkv -map 0:s:0 subs.srt",
-          "detail": "Extract subtitle tracks and attached files (fonts, images).",
+          "detail": "提取字幕轨道和附件文件（字体、图像等）。",
           "href": "/wiki/techniques/video"
         },
         {
           "n": 4,
-          "cmd": "audio track",
-          "hint": "→ spectrogram",
+          "cmd": "提取音轨",
+          "hint": "→ 查看频谱图",
           "full": "ffmpeg -i file.mp4 -vn audio.wav",
-          "detail": "Pull the audio track, then treat it as an audio challenge (spectrogram first).",
+          "detail": "提取音轨后按音频挑战检查（先查看频谱图）。",
           "href": "/wiki/techniques/audio"
         },
         {
           "n": 5,
-          "cmd": "moov / trailing",
+          "cmd": "moov / 尾随数据",
           "hint": "exiftool · binwalk",
           "full": "binwalk file.mp4",
-          "detail": "Metadata and bytes past the moov atom.",
+          "detail": "检查元数据以及 moov atom（MP4 媒体数据索引结构）之后的字节。",
           "href": "/wiki/tools/exiftool"
         }
       ]
     },
     {
-      "label": "TEXT",
+      "label": "文本",
       "color": "#56d4bc",
       "steps": [
         {
           "n": 1,
           "cmd": "cat -A → stegsnow",
-          "hint": "whitespace",
+          "hint": "空白字符",
           "full": "stegsnow -C file.txt",
-          "detail": "Trailing spaces/tabs; reveal with cat -A, extract with stegsnow.",
+          "detail": "行尾空格 / 制表符可用 cat -A 显示，再用 stegsnow（空白字符隐写提取工具）提取。",
           "href": "/wiki/tools/stegsnow"
         },
         {
           "n": 2,
-          "cmd": "zero-width",
+          "cmd": "零宽字符",
           "hint": "U+200B / C / D",
-          "full": "compare wc -c to the visible length",
-          "detail": "Invisible zero-width characters; inspect code points with xxd or a zero-width decoder.",
+          "full": "比较 wc -c 输出与可见文本长度",
+          "detail": [
+            "不可见的零宽字符；使用 xxd 或零宽字符解码器检查码点。"
+          ],
           "href": "/wiki/techniques/text"
         },
         {
           "n": 3,
-          "cmd": "homoglyphs",
-          "hint": "mixed alphabets",
-          "full": "Irongeek homoglyph decoder",
-          "detail": "Latin a vs Cyrillic а — a homoglyph decoder separates them.",
+          "cmd": "形近字符",
+          "hint": "混用字母体系",
+          "full": "Irongeek 形近字符解码器",
+          "detail": "拉丁字母 a 与西里尔字母 а 外观相近；这种 homoglyph（形近字符）可用解码器区分。",
           "href": "/wiki/techniques/text"
         },
         {
           "n": 4,
-          "cmd": "encodings",
+          "cmd": "编码 / 奇特语言",
           "hint": "CyberChef Magic",
           "full": "CyberChef → Magic",
-          "detail": "Brainfuck / Whitespace / Piet / Malbolge and base-N chains; try CyberChef Magic.",
+          "detail": "Brainfuck、Whitespace、Piet、Malbolge（特殊编程语言）和多层 base-N 编码可尝试 CyberChef（数据分析与编码转换工具）的 Magic 操作。",
           "href": "/wiki/techniques/encodings"
         }
       ]
     },
     {
-      "label": "ARCHIVE / DOC",
+      "label": "压缩包 / 文档",
       "color": "#ff7b72",
       "steps": [
         {
           "n": 1,
           "cmd": "unzip / 7z",
-          "hint": "appended zip",
+          "hint": "附加 ZIP",
           "full": "unzip file.png",
-          "detail": "An appended archive; unzip / 7z l often just works.",
+          "detail": "文件可能附加了压缩包；unzip / 7z l 通常可以直接读取。",
           "href": "/wiki/tools/binwalk"
         },
         {
           "n": 2,
           "cmd": "binwalk -e",
-          "hint": "carve embedded",
+          "hint": "提取嵌入文件",
           "full": "binwalk -e file.bin",
-          "detail": "Carve embedded / compressed files out of the container.",
+          "detail": "从容器中雕刻出嵌入文件或压缩数据。",
           "href": "/wiki/tools/binwalk"
         },
         {
           "n": 3,
-          "cmd": "polyglot?",
-          "hint": "two magic bytes",
-          "full": "check for multiple magic numbers",
-          "detail": "A file valid as two formats (PDF/ZIP, JPEG/ZIP, GIF/JS); file will not flag it.",
+          "cmd": "多格式文件？",
+          "hint": "检查多个魔数",
+          "full": "检查是否存在多个文件魔数",
+          "detail": "同一文件可能同时符合两种格式（PDF/ZIP、JPEG/ZIP、GIF/JS），这类 polyglot（多格式文件）不会被 file 自动标记。",
           "href": "/wiki/techniques/files-archives"
         },
         {
           "n": 4,
-          "cmd": "pdf / docx / apk",
-          "hint": "it's a zip",
+          "cmd": "PDF / DOCX / APK",
+          "hint": "本质是 ZIP",
           "full": "7z x file.docx",
-          "detail": ".docx / .pptx / .jar / .apk are ZIPs; PDFs: pdfdetach -saveall.",
+          "detail": ".docx / .pptx / .jar / .apk 本质是 ZIP；PDF 可用 pdfdetach -saveall。",
           "href": "/wiki/tools/pdfinfo"
         },
         {
           "n": 5,
           "cmd": "fcrackzip -u -D",
-          "hint": "crack zip",
+          "hint": "破解 ZIP 密码",
           "full": "fcrackzip -u -D -p rockyou.txt file.zip",
-          "detail": "ZipCrypto is weak (also bkcrack known-plaintext); AES-256 is not.",
+          "detail": "ZipCrypto（ZIP 传统加密方式）较弱（也可用 bkcrack 执行已知明文攻击）；AES-256（高级加密标准）则不适用。",
           "href": "/wiki/cheatsheet/brute-force"
         }
       ]
     },
     {
-      "label": "PCAP / NET",
+      "label": "PCAP / 网络",
       "color": "#e3b341",
       "steps": [
         {
           "n": 1,
           "cmd": "tshark -qz io,phs",
-          "hint": "what's inside",
+          "hint": "查看协议组成",
           "full": "tshark -r file.pcap -qz io,phs",
-          "detail": "The protocol hierarchy shows which protocols carry data.",
+          "detail": "PCAP（数据包捕获）中的协议层级可显示捕获数据包含哪些网络协议。",
           "href": "/wiki/cheatsheet/network"
         },
         {
           "n": 2,
           "cmd": "--export-objects",
-          "hint": "carve HTTP/SMB",
+          "hint": "提取 HTTP/SMB",
           "full": "tshark -r file.pcap --export-objects http,out/",
-          "detail": "Carve transferred files out of HTTP / SMB / TFTP.",
+          "detail": "从 HTTP（超文本传输协议）/ SMB（服务器消息块）/ TFTP（简易文件传输协议）通信中提取传输文件。",
           "href": "/wiki/cheatsheet/network"
         },
         {
           "n": 3,
           "cmd": "usb.capdata",
-          "hint": "keystrokes",
+          "hint": "按键记录",
           "full": "tshark -r f.pcap -Y usb.capdata -T fields -e usb.capdata",
-          "detail": "USB HID captures decode to keystrokes / mouse movement.",
+          "detail": "USB（通用串行总线）HID（人机接口设备）捕获数据可还原按键输入和鼠标移动。",
           "href": "/wiki/cheatsheet/network"
         },
         {
           "n": 4,
           "cmd": "dns.qry.name",
-          "hint": "exfil in subdomains",
+          "hint": "子域名中的外传数据",
           "full": "tshark -r f.pcap -Y dns -T fields -e dns.qry.name",
-          "detail": "Data exfiltrated in DNS subdomains.",
+          "detail": "DNS（域名系统）子域名中可能藏有外传数据。",
           "href": "/wiki/cheatsheet/network"
         }
       ]
     },
     {
-      "label": "UNKNOWN / RAW",
+      "label": "未知 / 原始数据",
       "color": "#8b949e",
       "steps": [
         {
           "n": 1,
-          "cmd": "file / hex editor",
-          "hint": "identify",
+          "cmd": "file / 十六进制",
+          "hint": "识别格式",
           "full": "file target",
-          "detail": "Trust file over the extension; inspect the bytes in a hex editor.",
+          "detail": "以 file（文件类型识别工具）的识别结果为准，不要轻信扩展名；使用十六进制编辑器检查字节。",
           "href": "/wiki/tools/file"
         },
         {
           "n": 2,
           "cmd": "binvis.io",
-          "hint": "visualize bytes",
-          "full": "open binvis.io",
-          "detail": "Visualize byte entropy / patterns to spot hidden structure.",
+          "hint": "可视化字节",
+          "full": "打开 binvis.io（字节数据可视化网站）",
+          "detail": "通过字节熵和模式的可视化结果寻找隐藏结构。",
           "href": "https://binvis.io/"
         },
         {
           "n": 3,
-          "cmd": "raw import",
+          "cmd": "按原始数据导入",
           "hint": "GIMP / Audacity",
-          "full": "import as raw data",
-          "detail": "Import an unknown blob as raw image (GIMP) or raw audio (Audacity).",
+          "full": "按原始数据导入",
+          "detail": "将未知数据块作为原始图像（GIMP）或原始音频（Audacity）导入。",
           "href": "/wiki/techniques/steganalysis"
         },
         {
           "n": 4,
-          "cmd": "QR / Braille",
-          "hint": "decode blob",
+          "cmd": "QR / 盲文",
+          "hint": "解码数据块",
           "full": "zbarimg --raw img.png",
-          "detail": "Decode QR / barcodes with zbarimg; Braille / semaphore by hand.",
+          "detail": "使用 zbarimg 解码 QR（快速响应码）/ 条形码；Braille（盲文）/ 旗语可手动识别。",
           "href": "/wiki/techniques/encodings"
         }
       ]

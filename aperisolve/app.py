@@ -1,5 +1,6 @@
 """Aperi'Solve Flask application."""
 
+import base64
 import hashlib
 import json
 import os
@@ -7,6 +8,7 @@ import shutil
 import time
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
+from urllib.parse import quote_from_bytes
 from pathlib import Path
 from typing import Any, cast
 
@@ -473,6 +475,78 @@ def _register_submission_routes(app: Flask) -> None:
         return response
 
 
+def _keyword_patterns(query: str) -> dict[str, bytes]:
+    """Build common textual encodings for a keyword, omitting duplicates."""
+    raw = query.encode("utf-8")
+    base64_value = base64.b64encode(raw)
+    base32_value = base64.b32encode(raw)
+    hex_value = raw.hex().encode("ascii")
+    binary_value = " ".join(f"{byte:08b}" for byte in raw).encode("ascii")
+    candidates = {
+        "text": raw,
+        "base64": base64_value,
+        "base64 (unpadded)": base64_value.rstrip(b"="),
+        "base32": base32_value,
+        "base32 (unpadded)": base32_value.rstrip(b"="),
+        "binary": "".join(f"{byte:08b}" for byte in raw).encode("ascii"),
+        "binary (spaced)": binary_value,
+        "hex": hex_value,
+        "hex (uppercase)": hex_value.upper(),
+        "URL encoded": quote_from_bytes(raw, safe="").encode("ascii"),
+        "decimal": " ".join(str(byte) for byte in raw).encode("ascii"),
+    }
+    patterns: dict[str, bytes] = {}
+    seen: set[bytes] = set()
+    for label, pattern in candidates.items():
+        if pattern and pattern not in seen:
+            patterns[label] = pattern
+            seen.add(pattern)
+    return patterns
+
+
+def _find_keyword_matches(data: bytes, patterns: dict[str, bytes]) -> list[str]:
+    """Return matching encodings, treating only the literal text case-insensitively."""
+    lowered = data.lower()
+    matches = []
+    for encoding, pattern in patterns.items():
+        haystack = lowered if encoding == "text" else data
+        needle = pattern.lower() if encoding == "text" else pattern
+        if needle in haystack:
+            matches.append(encoding)
+    return matches
+
+
+def _search_file_patterns(path: Path, patterns: dict[str, bytes]) -> dict[str, list[int]]:
+    """Search a large file in bounded chunks and retain at most 100 offsets per encoding."""
+    if not patterns:
+        return {}
+    max_pattern_length = max(map(len, patterns.values()))
+    found: dict[str, list[int]] = {name: [] for name in patterns}
+    carry = b""
+    position = 0
+    with path.open("rb") as file_obj:
+        while chunk := file_obj.read(1024 * 1024):
+            data = carry + chunk
+            base_offset = position - len(carry)
+            for encoding, pattern in patterns.items():
+                offsets = found[encoding]
+                if len(offsets) >= 100:
+                    continue
+                haystack = data.lower() if encoding == "text" else data
+                needle = pattern.lower() if encoding == "text" else pattern
+                start = 0
+                while len(offsets) < 100 and (match_at := haystack.find(needle, start)) >= 0:
+                    absolute = base_offset + match_at
+                    if absolute >= 0 and absolute not in offsets:
+                        offsets.append(absolute)
+                    start = match_at + 1
+            if all(len(offsets) >= 100 for offsets in found.values()):
+                break
+            position += len(chunk)
+            carry = data[-(max_pattern_length - 1):] if max_pattern_length > 1 else b""
+    return {encoding: offsets for encoding, offsets in found.items() if offsets}
+
+
 def _build_result_response(result_path: Path) -> Response | tuple[Response, int]:
     """Build the /result response with an ETag over the raw results.json bytes.
 
@@ -530,6 +604,153 @@ def _register_data_routes(app: Flask) -> None:
         response.headers["Cache-Control"] = "private, max-age=30"
         return response
 
+    @app.route("/hex-preview/<hash_val>", methods=["GET"])
+    @limiter.limit("60 per minute", exempt_when=_is_local_request)
+    def get_hex_preview(hash_val: str) -> Response:
+        """Return a bounded hexadecimal window for the Strings byte view."""
+        submission = Submission.query.get_or_404(hash_val)
+        image = Image.query.get_or_404(submission.image_hash)
+        input_path = Path(image.file)
+        if not input_path.is_file():
+            abort(404, description="Original file not found.")
+
+        file_size = input_path.stat().st_size
+        load_full_file = request.args.get("full", default="0") == "1"
+        requested_offset = request.args.get("offset", default=0, type=int) or 0
+        if load_full_file:
+            window_start = 0
+        else:
+            requested_offset = max(0, min(requested_offset, max(0, file_size - 1)))
+            window_start = max(0, requested_offset - 2048)
+            window_start = (window_start // 16) * 16
+        with input_path.open("rb") as file_obj:
+            if load_full_file:
+                data = file_obj.read()
+            else:
+                file_obj.seek(window_start)
+                data = file_obj.read(4096)
+        rows = [
+            {
+                "offset": window_start + start,
+                "offset_hex": f"{window_start + start:08X}",
+                "hex": " ".join(f"{value:02X}" for value in data[start : start + 16]),
+                "ascii": "".join(
+                    chr(value) if 32 <= value <= 126 else "."
+                    for value in data[start : start + 16]
+                ),
+            }
+            for start in range(0, len(data), 16)
+        ]
+        response = jsonify(
+            {
+                "file_size": file_size,
+                "preview_start": window_start,
+                "preview_bytes": len(data),
+                "preview_truncated": window_start + len(data) < file_size,
+                "hex_rows": rows,
+            },
+        )
+        response.headers["Cache-Control"] = "private, max-age=300"
+        return response
+
+    @app.route("/hex-search/<hash_val>", methods=["GET"])
+    @limiter.limit("60 per minute", exempt_when=_is_local_request)
+    def search_hex_file(hash_val: str) -> Response:
+        """Find ASCII and hexadecimal byte matches across the complete file."""
+        submission = Submission.query.get_or_404(hash_val)
+        image = Image.query.get_or_404(submission.image_hash)
+        input_path = Path(image.file)
+        if not input_path.is_file():
+            abort(404, description="Original file not found.")
+
+        query = request.args.get("q", "").strip()
+        if not query or len(query) > 128:
+            return jsonify({"matches": [], "truncated": False})
+
+        patterns: set[tuple[bytes, bool]] = set()
+        try:
+            ascii_pattern = query.encode("ascii").lower()
+        except UnicodeEncodeError:
+            ascii_pattern = b""
+        if ascii_pattern:
+            patterns.add((ascii_pattern, True))
+
+        compact_hex = "".join(char for char in query if char not in " \t\r\n,:-")
+        if compact_hex and len(compact_hex) % 2 == 0 and all(char in "0123456789abcdefABCDEF" for char in compact_hex):
+            patterns.add((bytes.fromhex(compact_hex), False))
+
+        if not patterns:
+            return jsonify({"matches": [], "truncated": False})
+
+        max_matches = 20000
+        overlap_size = max(len(pattern) for pattern, _ in patterns) - 1
+        matches: set[int] = set()
+        truncated = False
+        carry = b""
+        position = 0
+        with input_path.open("rb") as file_obj:
+            while chunk := file_obj.read(1024 * 1024):
+                data = carry + chunk
+                base_offset = position - len(carry)
+                lowered_data = data.lower()
+                for pattern, case_insensitive in patterns:
+                    search_data = lowered_data if case_insensitive else data
+                    start = 0
+                    while (found := search_data.find(pattern, start)) >= 0:
+                        absolute_offset = base_offset + found
+                        if absolute_offset >= 0:
+                            if absolute_offset not in matches and len(matches) >= max_matches:
+                                truncated = True
+                                break
+                            matches.add(absolute_offset)
+                        start = found + 1
+                    if truncated:
+                        break
+                if truncated:
+                    break
+                position += len(chunk)
+                carry = data[-overlap_size:] if overlap_size else b""
+
+        response = jsonify({"matches": sorted(matches), "truncated": truncated})
+        response.headers["Cache-Control"] = "private, max-age=30"
+        return response
+
+    @app.route("/keyword-search/<hash_val>", methods=["GET"])
+    @limiter.limit("60 per minute", exempt_when=_is_local_request)
+    def keyword_search(hash_val: str) -> Response:
+        """Search the original file and saved analyzer outputs for keyword encodings."""
+        submission = Submission.query.get_or_404(hash_val)
+        image = Image.query.get_or_404(submission.image_hash)
+        query = request.args.get("q", "").strip()
+        if not query or len(query) > 128:
+            return jsonify({"query": query, "matches": [], "truncated": False})
+
+        patterns = _keyword_patterns(query)
+        input_path = Path(image.file)
+        matches: list[dict[str, Any]] = []
+        if input_path.is_file():
+            offsets = _search_file_patterns(input_path, patterns)
+            if offsets:
+                matches.append({"tool": "original", "encodings": list(offsets), "offsets": offsets})
+
+        result_path = RESULT_FOLDER / str(image.hash) / str(submission.hash) / "results.json"
+        try:
+            results = json.loads(result_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            results = {}
+        if isinstance(results, dict):
+            for tool, result in results.items():
+                if not isinstance(result, dict):
+                    continue
+                output = json.dumps(result, ensure_ascii=False, sort_keys=True).encode("utf-8")
+                encodings = _find_keyword_matches(output, patterns)
+                if encodings:
+                    matches.append({"tool": str(tool), "encodings": encodings, "offsets": {}})
+
+        response = jsonify({"query": query, "matches": matches, "truncated": False})
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.route("/result/<hash_val>", methods=["GET"])
     @limiter.limit("240 per minute", exempt_when=_is_local_request)
     def get_result(hash_val: str) -> Response | tuple[Response, int]:
@@ -537,6 +758,20 @@ def _register_data_routes(app: Flask) -> None:
         submission = Submission.query.get_or_404(hash_val)
         image = Image.query.get_or_404(submission.image_hash)
         result_path = RESULT_FOLDER / str(image.hash) / str(submission.hash) / "results.json"
+        # Result JSON is retained across deployments. Populate the newly added
+        # byte-structure analyzer the first time a completed legacy result is
+        # opened, so users do not need to upload the same file again.
+        if submission.status == "completed" and result_path.is_file():
+            try:
+                cached_results = json.loads(result_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                cached_results = {}
+            if not isinstance(cached_results, dict) or "file_anomalies" not in cached_results:
+                input_path = Path(image.file)
+                if input_path.is_file():
+                    from .analyzers.file_anomalies import FileAnomaliesAnalyzer
+
+                    FileAnomaliesAnalyzer(input_path, result_path.parent).analyze()
         return _build_result_response(result_path)
 
     @app.route("/download/<hash_val>/<tool>")

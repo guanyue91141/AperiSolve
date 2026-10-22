@@ -26,7 +26,6 @@
   }
 
   const LANG_PREFIX = window.LANG_PREFIX || "";
-  const t = (key) => (window.I18N && window.I18N[key]) || key;
   const box = svg.viewBox.baseVal;
   const NAT_W = box && box.width ? box.width : svg.width.baseVal.value;
   const NAT_H = box && box.height ? box.height : svg.height.baseVal.value;
@@ -68,7 +67,7 @@
     }
     if (info.full) {
       html += '<div class="ds-tt-cmd"><code>' + escapeHtml(info.full) + "</code>" +
-        '<button type="button" class="ds-tt-copy" title="' + escapeHtml(t("Copy")) +
+        '<button type="button" class="ds-tt-copy" title="' + escapeHtml("复制命令") +
         '"><i class="fa fa-copy"></i></button></div>';
     }
     if (info.detail) {
@@ -79,7 +78,7 @@
       const href = external ? info.href : LANG_PREFIX + info.href;
       const attrs = external ? ' target="_blank" rel="noopener"' : "";
       html += '<a class="ds-tt-link" href="' + escapeHtml(href) + '"' + attrs + ">" +
-        escapeHtml(t("Learn more")) + " →</a>";
+        escapeHtml("查看相关说明") + " →</a>";
     }
     tooltip.innerHTML = html;
     const copyBtn = tooltip.querySelector(".ds-tt-copy");
@@ -327,13 +326,13 @@
       .then((out) => out.toBlob((blob) => {
         triggerDownload(URL.createObjectURL(blob), "aperisolve-decision-tree.png");
       }, "image/png"))
-      .catch(() => flashHint(t("Export failed. Please try again.")));
+      .catch(() => flashHint("导出失败，请重试。"));
   });
 
   btn("ds-dl-pdf", () => {
     const jspdf = window.jspdf && window.jspdf.jsPDF;
     if (!jspdf) {
-      flashHint(t("PDF export is unavailable (the PDF library failed to load)."));
+      flashHint("PDF 导出暂不可用（PDF 组件未能加载）。");
       return;
     }
     rasterize(2)
@@ -342,6 +341,6 @@
         pdf.addImage(out.toDataURL("image/png"), "PNG", 0, 0, NAT_W, NAT_H);
         pdf.save("aperisolve-decision-tree.pdf");
       })
-      .catch(() => flashHint(t("Export failed. Please try again.")));
+      .catch(() => flashHint("导出失败，请重试。"));
   });
 })();

@@ -36,7 +36,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&display=swap" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="/static/css/aperisolve.css?v={{ config["PROJECT_VERSION"] }}" rel="stylesheet">
+  <link href="/static/css/aperisolve.css?v={{ config["PROJECT_VERSION"] }}-ui-20261017-12" rel="stylesheet">
   {% if config["CUSTOM_EXTERNAL_SCRIPT"] %}
   <script async src="{{ config["CUSTOM_EXTERNAL_SCRIPT"]}}" crossorigin="anonymous"></script>
   {% endif %}
@@ -88,7 +88,7 @@
     window.WIKI_TOOLS = {{ wiki_tools | tojson }};
     window.LANG_PREFIX = {{ lang_prefix | tojson }};
   </script>
-  <script src="/static/js/aperisolve.js?v={{ config["PROJECT_VERSION"] }}"></script>
+  <script src="/static/js/aperisolve.js?v={{ config["PROJECT_VERSION"] }}-ui-20261022-1"></script>
   {% block background_scripts %}
   <script type="importmap">
 		{

@@ -399,3 +399,483 @@ msgstr "搜索 Wiki"
 msgid "Page navigation"
 msgstr "页面导航"
 
+msgid "WinHex-style byte and string view"
+msgstr "WinHex 风格字节与字符串并排视图"
+
+msgid "Hex view"
+msgstr "十六进制视图"
+
+msgid "Extracted strings"
+msgstr "提取的字符串"
+
+msgid "Offset"
+msgstr "偏移"
+
+msgid "Hex bytes"
+msgstr "十六进制字节"
+
+msgid "ASCII"
+msgstr "ASCII"
+
+msgid "No bytes to display"
+msgstr "没有可显示的字节"
+
+msgid "Showing the first 4096 bytes"
+msgstr "当前显示前 4096 字节"
+
+msgid "Unable to load the complete hex view."
+msgstr "无法加载完整的十六进制视图。"
+
+msgid "Showing bytes around offset"
+msgstr "当前显示位置附近的字节"
+
+msgid "Window at offset"
+msgstr "窗口起始偏移"
+
+msgid "String output was truncated"
+msgstr "字符串输出已截断"
+
+msgid "Select a string to locate its bytes in the hex view."
+msgstr "选择一个字符串即可在十六进制视图中定位对应字节。"
+
+msgid "String starts beyond the visible hex preview."
+msgstr "该字符串位于当前十六进制预览范围之外。"
+
+msgid "No printable strings found."
+msgstr "未找到可打印字符串。"
+
+msgid "File size"
+msgstr "文件大小"
+
+msgid "Signature matches"
+msgstr "文件特征匹配"
+
+msgid "Match"
+msgstr "匹配类型"
+
+msgid "Signature"
+msgstr "特征字节"
+
+msgid "Location"
+msgstr "位置"
+
+msgid "Header"
+msgstr "文件头"
+
+msgid "Embedded"
+msgstr "嵌入位置"
+
+msgid "No common file signatures were detected."
+msgstr "未检测到常见文件魔数。"
+
+msgid "End marker"
+msgstr "结束标记"
+
+msgid "Found"
+msgstr "已找到"
+
+msgid "Missing"
+msgstr "缺失"
+
+msgid "Not applicable"
+msgstr "不适用"
+
+msgid "Anomalies"
+msgstr "异常信息"
+
+msgid "Start"
+msgstr "起始"
+
+msgid "End"
+msgstr "结束"
+
+msgid "No structural anomalies detected."
+msgstr "未检测到结构异常。"
+
+msgid "Data after FFD9 (EOI) end marker"
+msgstr "FFD9（EOI）结束标记之后存在数据"
+
+msgid "Bytes follow the format's logical end marker and may contain appended data."
+msgstr "格式定义的逻辑结束标记后仍有数据，可能包含附加内容。"
+
+msgid "Byte ranges use a zero-based start and an exclusive end."
+msgstr "字节范围从 0 开始，结束偏移不包含在范围内。"
+
+msgid "Color remapping"
+msgstr "颜色重映射"
+
+msgid "ExifTool metadata"
+msgstr "ExifTool 元数据"
+
+msgid "ExifTool Version Number"
+msgstr "ExifTool 版本号"
+
+msgid "File Name"
+msgstr "文件名"
+
+msgid "Directory"
+msgstr "目录"
+
+msgid "File Size"
+msgstr "文件大小"
+
+msgid "File Modification Date/Time"
+msgstr "文件修改日期/时间"
+
+msgid "File Access Date/Time"
+msgstr "文件访问日期/时间"
+
+msgid "File Inode Change Date/Time"
+msgstr "文件索引节点变更日期/时间"
+
+msgid "File Permissions"
+msgstr "文件权限"
+
+msgid "File Type"
+msgstr "文件类型"
+
+msgid "File Type Extension"
+msgstr "文件扩展名"
+
+msgid "MIME Type"
+msgstr "MIME 类型"
+
+msgid "BMP Version"
+msgstr "BMP 版本"
+
+msgid "Bit Depth"
+msgstr "位深度"
+
+msgid "Compression"
+msgstr "压缩方式"
+
+msgid "Filter"
+msgstr "滤波器"
+
+msgid "Interlace"
+msgstr "交错方式"
+
+msgid "Color Type"
+msgstr "颜色类型"
+
+msgid "Planes"
+msgstr "颜色平面数"
+
+msgid "X Resolution"
+msgstr "X 分辨率"
+
+msgid "Y Resolution"
+msgstr "Y 分辨率"
+
+msgid "Colors Used"
+msgstr "已用颜色数"
+
+msgid "Important Colors"
+msgstr "重要颜色数"
+
+msgid "Image Width"
+msgstr "图像宽度"
+
+msgid "Image Height"
+msgstr "图像高度"
+
+msgid "Image Size"
+msgstr "图像尺寸"
+
+msgid "Megapixels"
+msgstr "百万像素"
+
+msgid "Exif Byte Order"
+msgstr "Exif 字节序"
+
+msgid "Current IPTC Digest"
+msgstr "当前 IPTC 摘要"
+
+msgid "Encoding Process"
+msgstr "编码过程"
+
+msgid "Bits Per Sample"
+msgstr "每样本位数"
+
+msgid "Color Components"
+msgstr "颜色分量数"
+
+msgid "Y Cb Cr Sub Sampling"
+msgstr "Y Cb Cr 子采样"
+
+msgid "Photometric Interpretation"
+msgstr "光度解释"
+
+msgid "Orientation"
+msgstr "方向"
+
+msgid "Samples Per Pixel"
+msgstr "每像素样本数"
+
+msgid "Resolution Unit"
+msgstr "分辨率单位"
+
+msgid "Software"
+msgstr "软件"
+
+msgid "Modify Date"
+msgstr "修改日期"
+
+msgid "Create Date"
+msgstr "创建日期"
+
+msgid "Metadata Date"
+msgstr "元数据日期"
+
+msgid "Exif Version"
+msgstr "Exif 版本"
+
+msgid "Color Space"
+msgstr "色彩空间"
+
+msgid "Exif Image Width"
+msgstr "Exif 图像宽度"
+
+msgid "Exif Image Height"
+msgstr "Exif 图像高度"
+
+msgid "Thumbnail Offset"
+msgstr "缩略图偏移"
+
+msgid "Thumbnail Length"
+msgstr "缩略图长度"
+
+msgid "Coded Character Set"
+msgstr "编码字符集"
+
+msgid "Application Record Version"
+msgstr "应用程序记录版本"
+
+msgid "IPTC Digest"
+msgstr "IPTC 摘要"
+
+msgid "Print Style"
+msgstr "打印样式"
+
+msgid "Displayed Units X"
+msgstr "显示单位 X"
+
+msgid "Displayed Units Y"
+msgstr "显示单位 Y"
+
+msgid "Print Position"
+msgstr "打印位置"
+
+msgid "Print Scale"
+msgstr "打印缩放比例"
+
+msgid "Background Color"
+msgstr "背景颜色"
+
+msgid "Global Angle"
+msgstr "全局角度"
+
+msgid "Global Altitude"
+msgstr "全局高度"
+
+msgid "Print Flags"
+msgstr "打印标志"
+
+msgid "Print Flags Info"
+msgstr "打印标志信息"
+
+msgid "Color Halftoning Info"
+msgstr "颜色半调信息"
+
+msgid "Color Transfer Funcs"
+msgstr "颜色传递函数"
+
+msgid "Grid Guides Info"
+msgstr "网格和参考线信息"
+
+msgid "URL List"
+msgstr "URL 列表"
+
+msgid "Slices Group Name"
+msgstr "切片组名称"
+
+msgid "Num Slices"
+msgstr "切片数量"
+
+msgid "Pixel Aspect Ratio"
+msgstr "像素宽高比"
+
+msgid "ICC Untagged"
+msgstr "未标记 ICC 配置"
+
+msgid "IDs Base Value"
+msgstr "ID 基准值"
+
+msgid "Has Real Merged Data"
+msgstr "包含真实合并数据"
+
+msgid "Writer Name"
+msgstr "写入程序名称"
+
+msgid "Reader Name"
+msgstr "读取程序名称"
+
+msgid "Photoshop Quality"
+msgstr "Photoshop 质量"
+
+msgid "Photoshop Format"
+msgstr "Photoshop 格式"
+
+msgid "XMP Toolkit"
+msgstr "XMP 工具包"
+
+msgid "Document ID"
+msgstr "文档 ID"
+
+msgid "Instance ID"
+msgstr "实例 ID"
+
+msgid "Original Document ID"
+msgstr "原始文档 ID"
+
+msgid "History Action"
+msgstr "历史操作"
+
+msgid "History Instance ID"
+msgstr "历史实例 ID"
+
+msgid "History When"
+msgstr "历史时间"
+
+msgid "History Software Agent"
+msgstr "历史软件代理"
+
+msgid "History Changed"
+msgstr "历史变更内容"
+
+msgid "History Parameters"
+msgstr "历史参数"
+
+msgid "Derived From Instance ID"
+msgstr "来源实例 ID"
+
+msgid "Derived From Document ID"
+msgstr "来源文档 ID"
+
+msgid "Derived From Original Document ID"
+msgstr "来源原始文档 ID"
+
+msgid "Format"
+msgstr "格式"
+
+msgid "Legacy IPTC Digest"
+msgstr "旧版 IPTC 摘要"
+
+msgid "Color Mode"
+msgstr "颜色模式"
+
+msgid "Document Ancestors"
+msgstr "文档祖先记录"
+
+msgid "Creator Tool"
+msgstr "创建工具"
+
+msgid "DCT Encode Version"
+msgstr "DCT 编码版本"
+
+msgid "APP14 Flags 0"
+msgstr "APP14 标志 0"
+
+msgid "APP14 Flags 1"
+msgstr "APP14 标志 1"
+
+msgid "Color Transform"
+msgstr "颜色变换"
+
+msgid "Foremost (file carving and recovery analysis)"
+msgstr "Foremost（文件雕刻与恢复分析）"
+
+msgid "Binwalk (embedded file and signature scanning)"
+msgstr "Binwalk（嵌入文件与特征扫描）"
+
+msgid "File (file type identification)"
+msgstr "File（文件类型识别）"
+
+msgid "JPSeek (JPHide steganography extraction)"
+msgstr "JPSeek（JPHide 隐写提取）"
+
+msgid "JSteg (JPEG coefficient steganography analysis)"
+msgstr "JSteg（JPEG 系数隐写分析）"
+
+msgid "OpenStego (image steganography extraction)"
+msgstr "OpenStego（图像隐写提取）"
+
+msgid "OutGuess (JPEG steganography analysis)"
+msgstr "OutGuess（JPEG 隐写分析）"
+
+msgid "PCRT (PNG repair and trailing data recovery)"
+msgstr "PCRT（PNG 修复与尾随数据恢复）"
+
+msgid "Pngcheck (PNG chunk and CRC validation)"
+msgstr "Pngcheck（PNG 数据块与 CRC 校验）"
+
+msgid "Steghide (file steganography extraction)"
+msgstr "Steghide（文件隐写提取）"
+
+msgid "Strings (hexadecimal and text search)"
+msgstr "Strings（十六进制与文本检索）"
+
+msgid "zsteg (PNG/BMP bit-plane steganography analysis)"
+msgstr "zsteg（PNG/BMP 位平面隐写分析）"
+
+msgid "File anomaly inspection (magic number and terminator analysis)"
+msgstr "文件异常检查（文件魔数与结束标记分析）"
+
+msgid "Decomposer (image bit-plane analysis)"
+msgstr "Decomposer（图像位平面分析）"
+
+msgid "Identify (image format and properties)"
+msgstr "Identify（图像格式与属性识别）"
+
+msgid "PDFiD (PDF suspicious keyword scan)"
+msgstr "PDFiD（PDF 可疑关键词扫描）"
+
+msgid "PDFInfo (PDF metadata inspection)"
+msgstr "PDFInfo（PDF 元数据检查）"
+
+msgid "Spectrogram (audio frequency visualization)"
+msgstr "Spectrogram（音频频谱可视化）"
+
+msgid "Keyword"
+msgstr "关键词"
+
+msgid "(optional; searches common encodings too)"
+msgstr "（可选；也会搜索常见编码）"
+
+msgid "For example: flag"
+msgstr "例如：flag"
+
+msgid "Keyword matches"
+msgstr "关键词命中"
+
+msgid "Original file"
+msgstr "原始文件"
+
+msgid "No matches found in the uploaded file or analysis results."
+msgstr "上传文件及分析结果中未发现匹配项。"
+
+msgid "Search hex bytes, ASCII, or offset"
+msgstr "搜索十六进制字节、ASCII 文本或偏移"
+
+msgid "Search extracted strings or offset"
+msgstr "搜索提取的字符串或偏移"
+
+msgid "Previous match"
+msgstr "上一个"
+
+msgid "Next match"
+msgstr "下一个"
+
+msgid "No matches found."
+msgstr "没有匹配项。"
+

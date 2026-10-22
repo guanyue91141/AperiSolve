@@ -23,16 +23,6 @@
 {% endblock %}
 {% block body_content %}
 <form id="upload-form" class="card p-4 mb-4" method="POST" enctype="multipart/form-data">
-  <!-- Description Section -->
-  <section class="mb-4">
-    <h2 class="h4 mb-3 question">{{ _("What is this?") }}</h2>
-    <p class="text-light-emphasis mb-0">
-      {{ _("Aperi'Solve is an online platform which performs layer analysis on images.
-      The platform also uses zsteg, steghide, outguess, exiftool, binwalk, foremost and strings
-      for deeper steganography analysis. Supports: PNG, JPG, GIF, BMP, JPEG, JFIF, JPE, TIFF...") }}
-    </p>
-  </section>
-
   <!-- Drop Zone -->
   <div class="mb-3">
     <label for="image" class="form-label visually-hidden">{{ _("File") }}</label>
@@ -45,6 +35,12 @@
         <i class="fa fa-folder-open me-2"></i>{{ _("Choose a file") }}
       </button>
     </div>
+  </div>
+
+  <!-- Keyword search -->
+  <div class="mb-3">
+    <label for="keyword" class="form-label">{{ _("Keyword") }} <small class="text-muted">{{ _("(optional; searches common encodings too)") }}</small></label>
+    <input class="form-control" type="search" name="keyword" id="keyword" maxlength="128" placeholder="{{ _('For example: flag') }}" autocomplete="off">
   </div>
 
   <!-- Password Field -->
@@ -80,5 +76,4 @@
   <div id="result-analyzers" class="mb-4" aria-live="polite"></div>
   <div id="result-removal" class="mb-4"></div>
 </section>
-{% include 'partials/promo.html' %}
 {% endblock %}

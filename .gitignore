@@ -9,3 +9,7 @@ removed_images/
 .pytest_cache/
 .coverage
 messages.pot
+
+# Native-run artifacts (setup.sh / start.sh)
+logs/
+aperisolve.db
