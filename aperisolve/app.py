@@ -1054,8 +1054,8 @@ def create_app() -> Flask:
 
         Templates request CSS/JS as ``?v=<PROJECT_VERSION>``, so those exact
         URLs never change contents -- a new release means a new URL. Requests
-        without the parameter (logo.svg, the Three.js bundles reached through
-        the import map) keep the 7-day default, because their URL is reused
+        without the parameter (for example, logo.svg) keep the 7-day default,
+        because their URL is reused
         across releases and a year-long cache would pin clients to stale bytes.
         """
         if (

@@ -28,16 +28,14 @@
   <meta name="twitter:title" content="{{ self.title() }}">
   <meta name="twitter:description" content="{{ self.meta_description() }}">
   <meta name="twitter:image" content="{{ base_url }}/static/img/og-image.png">
-  <link rel="icon" type="image/svg+xml" href="/static/img/logo.svg">
+  <link rel="icon" type="image/svg+xml" href="/static/img/logo.svg?v={{ config["PROJECT_VERSION"] }}-green-1">
   <link href="/static/vendor/bootstrap/bootstrap.min.css" rel="stylesheet">
   <link href="/static/vendor/fontawesome/css/font-awesome.min.css" rel="stylesheet">
   <link href="/static/vendor/compat.css" rel="stylesheet">
-  <link href="/static/css/aperisolve.css?v={{ config["PROJECT_VERSION"] }}-offline-1" rel="stylesheet">
+  <link href="/static/css/aperisolve.css?v={{ config["PROJECT_VERSION"] }}-ui-20261022-6" rel="stylesheet">
 </head>
 
 <body class="d-flex flex-column min-vh-100 text-light">
-  {% block background %}<div id="three-bg"></div>{% endblock %}
-
   <!-- Main content area -->
   <main class="flex-grow-1">
     {% block main_content %}
@@ -48,7 +46,7 @@
         {# aria-label kept: it contains the visible "Aperi'Solve" in every
            language, so it adds context without breaking WCAG 2.5.3. #}
         <a class="title-link d-inline-flex align-items-center text-decoration-none" href="/" aria-label="{{ _("Aperi'Solve Home") }}">
-          <img src="/static/img/logo.svg" alt="Aperi'Solve logo" class="logo-img me-3" width="80" height="80">
+          <img src="/static/img/logo.svg?v={{ config["PROJECT_VERSION"] }}-green-1" alt="Aperi'Solve logo" class="logo-img me-3" width="80" height="80">
           <div class="d-flex flex-column">
             <span class="title-text">Aperi'Solve</span>
             <span class="title-version">v.{{ config["PROJECT_VERSION"] }}</span>
@@ -82,38 +80,7 @@
     window.WIKI_TOOLS = {{ wiki_tools | tojson }};
     window.LANG_PREFIX = {{ lang_prefix | tojson }};
   </script>
-  <script src="/static/js/aperisolve.js?v={{ config["PROJECT_VERSION"] }}-ui-20261022-omni-1"></script>
-  {% block background_scripts %}
-  <script type="importmap">
-		{
-			"imports": {
-				"three": "/static/js/three.module.min.js"
-			}
-		}
-	</script>
-  <script>
-    // Load the decorative 3D background only after the page has finished
-    // loading: ~700 KB of Three.js must never compete with content, and
-    // reduced-motion users skip the download entirely.
-    //
-    // Phones and metered connections skip it too. The effect is pure
-    // decoration, but the cost is not: 700 KB of transfer plus a WebGL
-    // render loop that keeps a low-end phone's GPU busy and drains battery
-    // for the whole visit. `#three-bg` is `position: fixed` and transparent,
-    // so leaving it empty shifts nothing.
-    window.addEventListener("load", () => {
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-      if (window.matchMedia("(max-width: 767.98px)").matches) return;
-      // Chromium-only; absent elsewhere, in which case we just load it.
-      const link = navigator.connection;
-      if (link && (link.saveData || /(^|-)2g$/.test(link.effectiveType || ""))) return;
-      const s = document.createElement("script");
-      s.type = "module";
-      s.src = "/static/js/background.js?v={{ config["PROJECT_VERSION"] }}";
-      document.body.appendChild(s);
-    });
-  </script>
-  {% endblock %}
+  <script src="/static/js/aperisolve.js?v={{ config["PROJECT_VERSION"] }}-ui-20261022-omni-2"></script>
   {% block footer_content %} {% endblock %}
 </body>
 

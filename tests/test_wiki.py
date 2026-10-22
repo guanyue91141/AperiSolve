@@ -52,13 +52,6 @@ def test_cheatsheet_section_and_deep_pages(client: FlaskClient) -> None:
     assert client.get("/wiki/cheatsheet/brute-force").status_code == 200
 
 
-def test_wiki_page_disables_animated_background(client: FlaskClient) -> None:
-    """Content pages skip the Three.js background for Core Web Vitals."""
-    html = client.get("/wiki/methodology").get_data(as_text=True)
-    assert "three-bg" not in html
-    assert "background.js" not in html
-
-
 def test_unknown_page_is_404(client: FlaskClient) -> None:
     """Unknown slugs return a real 404."""
     assert client.get("/wiki/no-such-page").status_code == 404

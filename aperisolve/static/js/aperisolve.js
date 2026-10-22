@@ -1645,7 +1645,7 @@ if (browseBtn) {
   });
   dropZone.addEventListener("dragover", (e) => {
     e.preventDefault();
-    dropZone.style.boxShadow = "0 0 20px #9fef00";
+    dropZone.style.boxShadow = "0 0 20px #7ecb8f";
   });
   dropZone.addEventListener("dragleave", () => {
     dropZone.style.boxShadow = "";

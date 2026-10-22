@@ -42,13 +42,6 @@ def test_cheatsheet_preserves_legacy_anchors(client: FlaskClient) -> None:
         assert f'id="{anchor}"' in html, f"missing anchor {anchor}"
 
 
-def test_cheatsheet_disables_animated_background(client: FlaskClient) -> None:
-    """The cheatsheet skips the Three.js background for Core Web Vitals."""
-    html = client.get("/cheatsheet").get_data(as_text=True)
-    assert "three-bg" not in html
-    assert "background.js" not in html
-
-
 def test_cheatsheet_fallback_is_noindex(client: FlaskClient) -> None:
     """A prefixed language falls back to English and canonicalizes to it."""
     response = client.get("/fr/cheatsheet")

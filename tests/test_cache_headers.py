@@ -107,8 +107,8 @@ def test_versioned_static_assets_cache_forever(client: FlaskClient) -> None:
 
 
 def test_unversioned_static_assets_keep_the_short_default(client: FlaskClient) -> None:
-    """A reused URL (import map, favicon) must not pin clients to stale bytes."""
-    response = client.get("/static/js/three.module.min.js")
+    """A reused static URL must not pin clients to stale bytes."""
+    response = client.get("/static/js/aperisolve.js")
     assert response.status_code == 200
     assert "immutable" not in response.headers["Cache-Control"]
     assert "max-age=604800" in response.headers["Cache-Control"]

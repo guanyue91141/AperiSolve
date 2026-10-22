@@ -270,7 +270,7 @@ msgstr "赞助"
 
 #: aperisolve/templates/index.html:2
 msgid "Aperi'Solve - Online Image Steganography Analyzer"
-msgstr "Aperi'Solve - 在线图片隐写分析工具"
+msgstr "Aperi'Solve"
 
 #: aperisolve/templates/index.html:3
 msgid ""
