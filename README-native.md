@@ -14,6 +14,43 @@ running natively on this machine. Four local modifications are applied
 
 Logs land in `logs/`. Env vars are in `env.local.sh` (`source` it if running by hand).
 
+## 全能模式（Grok CLI）
+
+首页勾选“全能模式”，可一次上传多个任意类型文件，并填写解题说明，例如
+`flag 的格式为 exp{XXXX}`。提交后留在首页，点击左上角“任务记录”打开弹窗，
+查看各任务进度、展开运行日志、预览 TXT、下载文件或停止任务。
+
+每次提交创建独立的 `data/<任务UUID>/`，附件保存在 `uploads/` 中，用户说明保存在
+`instructions.txt`，完整提示词保存在 `prompt.txt`。后台监督进程在任务目录中调用：
+
+```bash
+grok --cwd /absolute/path/to/data/<task-id> \
+  --prompt-file /absolute/path/to/data/<task-id>/prompt.txt \
+  --always-approve --no-plan --output-format streaming-json
+```
+
+提示词要求先读取本机 `ctf-router` 技能，再解题；验证出的 flag 写入任务根目录
+`flag-re.txt`，每行一个，解题说明另存 `solution.txt`。`grok.log.txt` 保存实时日志，
+`.aperisolve/` 保存内部状态。只有 CLI 正常退出且结果文件非空才显示“已找到 flag”；
+CLI 正常退出但没有结果文件显示“未找到 flag”。
+
+全能模式不经过原分析器或 RQ，不限制上传字节数、执行时长和同时运行的任务数。
+文件流式落盘，实际容量取决于磁盘及浏览器/服务器环境。任务由独立进程运行，关闭
+浏览器或重启网页服务不会停止；点击“停止任务”会终止对应 Grok 进程组及其工具
+子进程。重启操作系统不会自动重跑任务，记录页会将丢失进程的任务标记失败。
+全能任务长期保留，不参与原分析结果的自动清理。
+
+可通过环境变量覆盖：
+
+| 变量 | 默认值 |
+|---|---|
+| `OMNI_DATA_FOLDER` | 项目根目录下的 `data/` |
+| `GROK_CLI` | `~/.local/bin/grok` |
+| `OMNI_SKILL_PATH` | `~/.grok/skills/ctf-router/SKILL.md` |
+
+沿用当前本机 Grok 登录与模型配置，自动批准解题工具调用。原上传模式的大小限制、
+分析流程及结果保留策略保持原状。
+
 `start.sh` prints every reachable address on success. On this host that is:
 
 ```

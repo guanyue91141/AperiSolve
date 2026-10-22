@@ -13,3 +13,4 @@ messages.pot
 # Native-run artifacts (setup.sh / start.sh)
 logs/
 aperisolve.db
+data/

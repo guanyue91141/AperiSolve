@@ -54,6 +54,7 @@ from .i18n import (
 )
 from .limits import is_local_request, limiter
 from .models import Image, Submission, UploadLog, cleanup_old_entries, db
+from .omni import configure_omni
 from .pages import pages_bp
 from .site_content import promo_html
 from .utils.sentry import initialize_sentry
@@ -938,6 +939,7 @@ def create_app() -> Flask:
     initialize_sentry()
     app = Flask(__name__)
     _configure_app(app)
+    configure_omni(app)
     _register_error_handlers(app)
     _register_page_routes(app)
     _register_submission_routes(app)

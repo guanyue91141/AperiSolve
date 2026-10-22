@@ -1502,7 +1502,9 @@ const browseBtn = document.getElementById("browse-btn");
 const dragMsg = document.getElementById("drag-msg");
 
 function showFilename(filename) {
-  dragMsg.innerHTML = "📄 " + escapeHtml(filename);
+  dragMsg.textContent = "📄 " + (fileInput.files.length
+    ? Array.from(fileInput.files, (file) => file.name).join(" · ")
+    : filename);
 }
 
 if (browseBtn) {
@@ -1540,6 +1542,11 @@ if (browseBtn) {
   // Drop file
   dropZone.addEventListener("drop", (e) => {
     const files = e.dataTransfer.files;
+    if (window.OmniUI?.busy()) return;
+    if (!window.OmniUI?.enabled() && files.length > 1) {
+      showDanger("普通模式仅支持单文件；请勾选全能模式后上传多个文件。", true);
+      return;
+    }
     if (files.length > 0) {
       fileInput.files = files; // Attach files to the hidden input
       showFilename(fileInput.files[0].name);
@@ -1558,6 +1565,11 @@ if (browseBtn) {
     .getElementById("upload-form")
     .addEventListener("submit", function (e) {
       e.preventDefault();
+
+      if (window.OmniUI?.enabled()) {
+        window.OmniUI.submit();
+        return;
+      }
 
       const fileInput = document.getElementById("image");
       const passwordInput = document.getElementById("password");

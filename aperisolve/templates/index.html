@@ -21,8 +21,17 @@
 }
 </script>
 {% endblock %}
+{% block header_actions %}
+<button type="button" class="btn btn-outline-primary omni-history-button" id="omni-history-open" aria-haspopup="dialog" aria-controls="omni-history">
+  <i class="fa-solid fa-list-check me-2" aria-hidden="true"></i>任务记录
+</button>
+{% endblock %}
 {% block body_content %}
 <form id="upload-form" class="card p-4 mb-4" method="POST" enctype="multipart/form-data">
+  <div class="form-check mb-3">
+    <input class="form-check-input" type="checkbox" id="omni-mode">
+    <label class="form-check-label" for="omni-mode">全能模式</label>
+  </div>
   <!-- Drop Zone -->
   <div class="mb-3">
     <label for="image" class="form-label visually-hidden">{{ _("File") }}</label>
@@ -37,6 +46,12 @@
     </div>
   </div>
 
+  <div id="omni-instructions-group" class="mb-3" hidden>
+    <label for="omni-instructions" class="visually-hidden">解题要求</label>
+    <textarea id="omni-instructions" class="form-control" rows="4" aria-label="解题要求"></textarea>
+  </div>
+
+  <div id="original-analysis-options">
   <!-- Keyword search -->
   <div class="mb-3">
     <label for="keyword" class="form-label">{{ _("Keyword") }} <small class="text-muted">{{ _("(optional; searches common encodings too)") }}</small></label>
@@ -57,6 +72,7 @@
     </label>
   </div>
 
+  </div>
   <!-- Submit Button -->
   <button type="submit" class="btn btn-primary btn-lg w-100">
     <i class="fa fa-upload me-2"></i>{{ _("Analyze File") }}
@@ -68,6 +84,7 @@
       0%
     </div>
   </div>
+  <div id="omni-upload-message" class="mt-3" role="status" aria-live="polite" hidden></div>
 </form>
 
 <!-- Results Section -->
@@ -76,4 +93,23 @@
   <div id="result-analyzers" class="mb-4" aria-live="polite"></div>
   <div id="result-removal" class="mb-4"></div>
 </section>
+
+<dialog id="omni-history" class="omni-history" aria-labelledby="omni-history-title">
+  <div class="omni-history-header">
+    <h2 id="omni-history-title">任务记录</h2>
+    <button type="button" class="btn btn-outline-light" id="omni-history-close" aria-label="关闭任务记录">关闭</button>
+  </div>
+  <p class="text-muted small">展开任务可查看日志、预览 TXT 和停止解题。关闭此面板不会停止任务。</p>
+  <p id="omni-history-message" role="status" aria-live="polite"></p>
+  <div id="omni-task-list"></div>
+  <div class="omni-pagination">
+    <button type="button" class="btn btn-outline-light" id="omni-prev">上一页</button>
+    <span id="omni-page"></span>
+    <button type="button" class="btn btn-outline-light" id="omni-next">下一页</button>
+  </div>
+</dialog>
+{% endblock %}
+{% block footer_content %}
+<link href="/static/css/omni.css?v={{ config['PROJECT_VERSION'] }}-omni-2" rel="stylesheet">
+<script src="/static/js/omni.js?v={{ config['PROJECT_VERSION'] }}-omni-2"></script>
 {% endblock %}
