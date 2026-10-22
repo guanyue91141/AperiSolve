@@ -28,7 +28,6 @@ from .analyzers.registry import archive_tools, tool_order
 from .cheatsheet import cheatsheet_bp, cheatsheet_lastmod
 from .config import (
     CLEANUP_INTERVAL_SECONDS,
-    CUSTOM_EXTERNAL_SCRIPT,
     DB_URI,
     FLASK_DEBUG,
     GOOGLE_ADS_TXT,
@@ -72,7 +71,6 @@ def _configure_app(app: Flask) -> None:
     """Configure Flask and extension settings."""
     app.config["JSON_SORT_KEYS"] = False
     app.config["PROJECT_VERSION"] = PROJECT_VERSION
-    app.config["CUSTOM_EXTERNAL_SCRIPT"] = CUSTOM_EXTERNAL_SCRIPT
     app.config["SQLALCHEMY_DATABASE_URI"] = DB_URI
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH

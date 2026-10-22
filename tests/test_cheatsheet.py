@@ -67,7 +67,7 @@ def test_map_page_renders(client: FlaskClient) -> None:
     assert 'class="ds-step"' in html  # interactive step overlays
     assert 'id="ds-data"' in html  # the tooltip data model
     assert "decision_map.js" in html
-    assert "jspdf" in html  # the PDF export library
+    assert "/static/js/decision_map.js" in html  # locally served map controls
     assert 'id="ds-dl-png"' in html
     assert 'id="ds-dl-pdf"' in html
     # The map owns the whole viewport: no site footer chrome.

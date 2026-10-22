@@ -329,18 +329,5 @@
       .catch(() => flashHint("导出失败，请重试。"));
   });
 
-  btn("ds-dl-pdf", () => {
-    const jspdf = window.jspdf && window.jspdf.jsPDF;
-    if (!jspdf) {
-      flashHint("PDF 导出暂不可用（PDF 组件未能加载）。");
-      return;
-    }
-    rasterize(2)
-      .then((out) => {
-        const pdf = new jspdf({ orientation: "landscape", unit: "pt", format: [NAT_W, NAT_H] });
-        pdf.addImage(out.toDataURL("image/png"), "PNG", 0, 0, NAT_W, NAT_H);
-        pdf.save("aperisolve-decision-tree.pdf");
-      })
-      .catch(() => flashHint("导出失败，请重试。"));
-  });
+  btn("ds-dl-pdf", () => window.print());
 })();

@@ -87,11 +87,10 @@ docker compose up -d
 
 Then browse url: http://localhost:5000/
 
-Ads and analytics are disabled by default; every integration
-(`CUSTOM_EXTERNAL_SCRIPT`, `GOOGLE_ADS_TXT`, `SITE_BASE_URL`, Sentry) is
-opt-in via environment variables documented in [`.env.example`](.env.example).
-The app never injects ad markup itself: `CUSTOM_EXTERNAL_SCRIPT` loads the
-AdSense script and placement is left to Auto ads.
+The browser UI uses locally served stylesheets, fonts, and scripts. It does
+not load frontend assets from external CDNs. Optional server-side Sentry
+reporting and `GOOGLE_ADS_TXT`/`SITE_BASE_URL` configuration are documented in
+[`.env.example`](.env.example).
 
 ## Architecture
 

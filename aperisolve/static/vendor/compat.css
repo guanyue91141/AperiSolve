@@ -1,0 +1,58 @@
+@font-face {
+  font-family: "Fira Code";
+  src: url("fonts/FiraCode-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  --font-base: "Fira Code", ui-monospace, monospace;
+}
+
+@font-face {
+  font-family: "Font Awesome 7 Free";
+  src: url("fontawesome/fonts/fa-6.7.2-solid-900.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 900;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Font Awesome 7 Free";
+  src: url("fontawesome/fonts/fa-6.7.2-regular-400.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Font Awesome 7 Brands";
+  src: url("fontawesome/fonts/fa-6.7.2-brands-400.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+}
+
+.fa-solid,
+.fa-regular,
+.fa-brands {
+  display: inline-block;
+  font: normal normal normal 14px/1 FontAwesome;
+  font-size: inherit;
+  text-rendering: auto;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.fa-list-check::before { content: "\f0ae"; }
+.fa-book-open::before { content: "\f02d"; }
+.fa-circle-question::before { content: "\f059"; }
+.fa-circle-info::before { content: "\f05a"; }
+.fa-file-pdf::before { content: "\f1c1"; }
+.fa-file-audio::before { content: "\f1c7"; }
+.fa-file-video::before { content: "\f1c8"; }
+.fa-images::before { content: "\f03e"; }
+.fa-backward-step::before { content: "\f048"; }
+.fa-brands.fa-x-twitter::before { font-family: "Font Awesome 7 Brands"; content: "\e61f"; }
+.fa-2xs { font-size: 0.625em; }

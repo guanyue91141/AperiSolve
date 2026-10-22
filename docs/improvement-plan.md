@@ -17,13 +17,9 @@ next tagged release.
   values from the example file — self-hosters must opt in with their own IDs.
 - [x] **Set `SITE_BASE_URL`** in the prod environment so canonicals/sitemap
   don't depend on the request URL.
-- [x] **AdSense**: resolved as *not needed*. Auto ads are enabled in the
-  console, so the `CUSTOM_EXTERNAL_SCRIPT` loader (which predates this audit)
-  already serves ads and Google handles placement. The manual-unit layer
-  (`ADSENSE_SLOT_*`, the `ad_unit` macro and its four call sites) was dead
-  configuration and has been removed. Earlier notes in this file claimed the
-  site rendered no ads at all — that was wrong: it only ever meant no
-  *manual* units rendered.
+- [x] **AdSense**: browser-side ad scripts were removed to keep frontend
+  visits free of external resource requests. `GOOGLE_ADS_TXT` remains available
+  for instances that publish an ads.txt file.
 
 ## P1 — deploy pipeline & robustness
 

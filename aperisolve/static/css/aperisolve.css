@@ -2580,3 +2580,46 @@ footer::before {
     text-decoration: underline;
     text-underline-offset: 0.15em;
 }
+@media print {
+    body:has(.ds-page) {
+        min-height: 0 !important;
+        background: #fff !important;
+        color: #000 !important;
+    }
+
+    body:has(.ds-page) main {
+        flex: none !important;
+    }
+
+    .ds-toolbar,
+    .ds-hint,
+    .ds-tooltip {
+        display: none !important;
+    }
+
+    .ds-page {
+        display: block;
+        height: auto;
+        overflow: visible;
+    }
+
+    .ds-viewport {
+        overflow: visible;
+        border: 0;
+        background: #fff;
+    }
+
+    .ds-canvas,
+    .ds-canvas.ds-ready {
+        position: static;
+        transform: none !important;
+        opacity: 1;
+        width: 100%;
+    }
+
+    .ds-canvas svg {
+        width: 100%;
+        height: auto;
+        max-height: 95vh;
+    }
+}

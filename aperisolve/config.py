@@ -51,7 +51,6 @@ CLEAR_AT_RESTART = _int_env("CLEAR_AT_RESTART", 0)
 IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".ico", ".jp2"]
 
 GOOGLE_ADS_TXT = getenv("GOOGLE_ADS_TXT", "")
-CUSTOM_EXTERNAL_SCRIPT = getenv("CUSTOM_EXTERNAL_SCRIPT", "")
 
 
 # Public base URL (e.g. "https://www.aperisolve.com") used for canonical,

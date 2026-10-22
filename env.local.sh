@@ -34,7 +34,6 @@ export MAX_STORE_TIME=86400
 
 # Ad/analytics are opt-in upstream; keep them off for local testing.
 export GOOGLE_ADS_TXT=""
-export CUSTOM_EXTERNAL_SCRIPT=""
 
 # The `if` is load-bearing: callers run with `set -e`, and `[ -d ] && export`
 # returns non-zero whenever the path is absent. As the final statement here that
