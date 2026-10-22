@@ -225,7 +225,7 @@ def list_tasks() -> Response:
 def get_task(task_id: str) -> Response:
     """Return one expanded record for the homepage dialog."""
     task = _task(task_id)
-    response = jsonify(public_state(task, reconcile(task), detail=True))
+    response = jsonify(public_state(task, reconcile(task)))
     response.headers["Cache-Control"] = "no-store"
     return response
 

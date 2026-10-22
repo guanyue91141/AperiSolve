@@ -117,28 +117,41 @@
     node.dataset.taskId = task.id;
     // Only static markup goes through innerHTML; user content uses textContent.
     node.innerHTML = `<summary><span class="omni-task-title"></span><span class="omni-task-status"></span>
-      <span class="omni-task-meta"></span><span class="omni-task-hint"></span><code class="omni-task-flag"></code></summary>
+      <span class="omni-task-meta"></span><span class="omni-task-hint"></span>
+      <span class="omni-task-flag-group"><code class="omni-task-flag"></code><button type="button" class="btn btn-sm btn-outline-light omni-copy-flag" hidden>复制</button></span></summary>
       <div class="omni-task-body"><strong>解题说明</strong><pre class="omni-instructions"></pre>
       <p class="omni-task-error" role="status"></p><div class="omni-task-actions">
       <button type="button" class="btn btn-outline-danger omni-stop">停止任务</button>
-      <button type="button" class="btn btn-outline-light omni-log">运行日志</button>
-      <label class="visually-hidden">任务文件</label><select class="form-select omni-files" aria-label="任务文件"></select>
-      <a class="btn btn-outline-light omni-download">下载文件</a></div>
+      <div class="omni-preview-buttons" role="group" aria-label="任务文本">
+        <button type="button" class="btn btn-outline-light omni-preview-button" data-path="grok.log.txt" aria-pressed="true">日志</button>
+        <button type="button" class="btn btn-outline-light omni-preview-button" data-path="prompt.txt" aria-pressed="false">提示词</button>
+        <button type="button" class="btn btn-outline-light omni-preview-button" data-path="flag-re.txt" aria-pressed="false">flag</button>
+      </div></div>
       <p class="omni-preview-note text-muted small" role="status"></p><pre class="omni-preview" tabindex="0"></pre></div>`;
-    const row = {node, task, selected: "grok.log.txt", signature: "", loading: false, previewVersion: 0};
-    row.select = node.querySelector(".omni-files");
+    const row = {node, task, selected: "grok.log.txt", loading: false, previewVersion: 0};
     row.output = node.querySelector(".omni-preview");
     row.note = node.querySelector(".omni-preview-note");
     row.stop = node.querySelector(".omni-stop");
     node.addEventListener("toggle", () => { if (node.open) loadDetails(row); });
-    row.select.addEventListener("change", () => {
-      row.selected = row.select.value;
+    node.querySelectorAll(".omni-preview-button").forEach((button) => button.addEventListener("click", () => {
+      row.selected = button.dataset.path;
+      node.querySelectorAll(".omni-preview-button").forEach((item) => {
+        item.setAttribute("aria-pressed", String(item === button));
+      });
       loadPreview(row);
-    });
-    node.querySelector(".omni-log").addEventListener("click", () => {
-      row.selected = "grok.log.txt";
-      row.select.value = row.selected;
-      loadPreview(row);
+    }));
+    const copyFlag = node.querySelector(".omni-copy-flag");
+    copyFlag.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      try {
+        await navigator.clipboard.writeText(row.task.flag);
+        copyFlag.textContent = "已复制";
+        setTimeout(() => { copyFlag.textContent = "复制"; }, 1500);
+      } catch {
+        copyFlag.textContent = "复制失败";
+        setTimeout(() => { copyFlag.textContent = "复制"; }, 2000);
+      }
     });
     row.stop.addEventListener("click", async () => {
       row.stop.disabled = true;
@@ -162,6 +175,7 @@
     row.node.querySelector(".omni-task-meta").textContent = `${task.id.slice(0, 8)} · ${new Date(task.created_at * 1000).toLocaleString()} · ${duration(task)}`;
     row.node.querySelector(".omni-task-hint").textContent = task.instructions.slice(0, 150) || "未填写解题说明";
     row.node.querySelector(".omni-task-flag").textContent = task.flag || "";
+    row.node.querySelector(".omni-copy-flag").hidden = !task.flag;
     row.node.querySelector(".omni-instructions").textContent = task.instructions || "（无）";
     row.node.querySelector(".omni-task-error").textContent = task.error || "";
     row.stop.hidden = !active.has(task.status);
@@ -170,24 +184,23 @@
     const path = row.selected;
     if (!path) return;
     const version = ++row.previewVersion;
-    const download = row.node.querySelector(".omni-download");
-    download.href = fileUrl(row.task.id, "download", path);
-    download.setAttribute("download", path.split("/").pop());
-    download.hidden = false;
-    if (!path.toLowerCase().endsWith(".txt")) {
-      row.output.textContent = "该文件可下载，在线预览仅支持 TXT 文件。";
-      row.note.textContent = path;
-      return;
-    }
+    row.output.textContent = "正在读取…";
     try {
       const data = await json(fileUrl(row.task.id, "text", path, path === "grok.log.txt"));
       if (version !== row.previewVersion || !dialog.open || !row.node.open) return;
       const atEnd = row.output.scrollTop + row.output.clientHeight >= row.output.scrollHeight - 30;
-      row.output.textContent = data.text || "（文件内容为空，运行中任务会自动更新）";
-      row.note.textContent = `${path}${data.truncated ? ` · 内容超过 256 KiB，仅预览${data.tail ? "末尾" : "开头"}部分，请下载完整文件。` : ""}`;
+      row.output.textContent = data.text || (path === "flag-re.txt" ? "（空）" : "（内容为空，运行中任务会自动更新）");
+      row.note.textContent = data.truncated ? "内容超过 256 KiB，仅预览" + (data.tail ? "末尾" : "开头") + "部分。" : "";
       if (atEnd && path === "grok.log.txt") row.output.scrollTop = row.output.scrollHeight;
     } catch (error) {
-      if (version === row.previewVersion) row.note.textContent = `预览暂不可用：${error.message}`;
+      if (version !== row.previewVersion || !dialog.open || !row.node.open) return;
+      if (path === "flag-re.txt" && error.message.includes("404")) {
+        row.output.textContent = "（空）";
+        row.note.textContent = "";
+      } else {
+        row.output.textContent = "";
+        row.note.textContent = `预览暂不可用：${error.message}`;
+      }
     }
   }
   async function loadDetails(row) {
@@ -197,25 +210,6 @@
       const task = await json(api(row.task.id));
       if (!dialog.open || !row.node.open) return;
       updateRow(row, task);
-      const signature = JSON.stringify(task.files.map((file) => file.path));
-      if (signature !== row.signature) {
-        row.signature = signature;
-        row.select.replaceChildren();
-        for (const file of task.files) {
-          const option = document.createElement("option");
-          option.value = file.path;
-          option.textContent = `${file.path} (${formatBytes(file.size)})`;
-          row.select.append(option);
-        }
-        if (!task.files.some((file) => file.path === row.selected)) row.selected = task.files[0]?.path || "";
-        row.select.value = row.selected;
-      }
-      for (const [index, file] of task.files.entries()) {
-        row.select.options[index].textContent = `${file.path} (${formatBytes(file.size)})`;
-      }
-      if (task.files_truncated) {
-        row.node.querySelector(".omni-task-error").textContent = `${task.error || ""}\n任务文件较多，仅列出前 2000 个文件。`;
-      }
       await loadPreview(row);
     } catch (error) {
       row.node.querySelector(".omni-task-error").textContent = error.message;
@@ -228,7 +222,7 @@
     try {
       const result = await json(`${api()}?page=${page}`);
       if (!dialog.open || current !== generation) return;
-      historyMessage.textContent = result.total ? `共 ${result.total} 个任务 · 每 3 秒自动更新` : "暂无全能任务，请在首页勾选全能模式后提交。";
+      historyMessage.textContent = result.total ? "" : "暂无全能任务，请在首页勾选全能模式后提交。";
       const ids = new Set(result.tasks.map((task) => task.id));
       for (const [id, row] of rows) {
         if (!ids.has(id)) { row.node.remove(); rows.delete(id); }

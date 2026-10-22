@@ -28,11 +28,11 @@
 .omni-task-status { display: inline-block; border: 1px solid #596572; border-radius: 1rem; padding: .1rem .6rem; }
 .omni-task-status[data-status="completed"] { color: #9fef00; border-color: #699d12; }
 .omni-task-status[data-status="failed"] { color: #ffa3a3; }
-.omni-task-flag { display: block; color: #b9f870; margin-top: .5rem; white-space: pre-wrap; }
+.omni-task-flag-group, .omni-preview-buttons { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.omni-task-flag { display: inline-block; color: #b9f870; margin-top: .5rem; white-space: pre-wrap; }
 .omni-task-body { border-top: 1px solid #35414d; padding: 1rem; }
 .omni-task-body pre { white-space: pre-wrap; overflow-wrap: anywhere; color: #e1e8ef; }
 .omni-task-actions { margin: .8rem 0; }
-.omni-task-actions select { flex: 1 1 240px; max-width: 100%; min-width: 0; }
 .omni-preview {
   background: #080d13;
   border: 1px solid #35414d;

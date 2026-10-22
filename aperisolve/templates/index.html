@@ -99,7 +99,6 @@
     <h2 id="omni-history-title">任务记录</h2>
     <button type="button" class="btn btn-outline-light" id="omni-history-close" aria-label="关闭任务记录">关闭</button>
   </div>
-  <p class="text-muted small">展开任务可查看日志、预览 TXT 和停止解题。关闭此面板不会停止任务。</p>
   <p id="omni-history-message" role="status" aria-live="polite"></p>
   <div id="omni-task-list"></div>
   <div class="omni-pagination">
@@ -110,6 +109,6 @@
 </dialog>
 {% endblock %}
 {% block footer_content %}
-<link href="/static/css/omni.css?v={{ config['PROJECT_VERSION'] }}-omni-2" rel="stylesheet">
-<script src="/static/js/omni.js?v={{ config['PROJECT_VERSION'] }}-omni-2"></script>
+<link href="/static/css/omni.css?v={{ config['PROJECT_VERSION'] }}-omni-3" rel="stylesheet">
+<script src="/static/js/omni.js?v={{ config['PROJECT_VERSION'] }}-omni-3"></script>
 {% endblock %}
