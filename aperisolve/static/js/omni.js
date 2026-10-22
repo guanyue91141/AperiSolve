@@ -28,6 +28,24 @@
   const rows = new Map();
 
   const api = (id = "", action = "") => `/api/omni/tasks${id ? `/${id}` : ""}${action ? `/${action}` : ""}`;
+  async function copyText(text) {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+    } catch {}
+    const field = document.createElement("textarea");
+    field.value = text;
+    field.setAttribute("readonly", "");
+    field.style.position = "fixed";
+    field.style.opacity = "0";
+    document.body.append(field);
+    field.select();
+    const copied = document.execCommand("copy");
+    field.remove();
+    if (!copied) throw new Error("clipboard copy unavailable");
+  }
   async function json(url, options) {
     const response = await fetch(url, {cache: "no-store", ...options});
     const data = await response.json().catch(() => ({}));
@@ -145,7 +163,7 @@
       event.preventDefault();
       event.stopPropagation();
       try {
-        await navigator.clipboard.writeText(row.task.flag);
+        await copyText(row.task.flag);
         copyFlag.textContent = "已复制";
         setTimeout(() => { copyFlag.textContent = "复制"; }, 1500);
       } catch {
