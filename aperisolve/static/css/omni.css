@@ -21,9 +21,12 @@
 .omni-history-header h2 { font-size: 1.4rem; margin: 0; }
 .omni-pagination { justify-content: center; margin-top: 1rem; }
 .omni-task { border: 1px solid #35414d; border-radius: .6rem; margin-bottom: .8rem; }
-.omni-task summary { cursor: pointer; padding: 1rem; overflow-wrap: anywhere; }
-.omni-task summary:focus-visible { outline: 2px solid #9fef00; outline-offset: 2px; }
+.omni-task-header { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; padding: 1rem; }
+.omni-task-heading { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; min-width: 0; }
+.omni-expand { flex: 0 0 auto; }
 .omni-task-title { font-weight: 600; margin-right: .7rem; }
+.omni-task-meta, .omni-task-hint, .omni-task-flag-group { margin-inline: 1rem; }
+.omni-task-flag-group { margin-bottom: .75rem; }
 .omni-task-meta, .omni-task-hint { display: block; color: #adb8c4; margin-top: .35rem; font-size: .85rem; }
 .omni-task-status { display: inline-block; border: 1px solid #596572; border-radius: 1rem; padding: .1rem .6rem; }
 .omni-task-status[data-status="completed"] { color: #9fef00; border-color: #699d12; }
@@ -46,6 +49,7 @@
 #omni-upload-message { overflow-wrap: anywhere; }
 @media (max-width: 600px) {
   .omni-history { width: calc(100vw - 1rem); padding: .8rem; max-height: 92vh; }
-  .omni-task summary, .omni-task-body { padding: .75rem; }
+  .omni-task-header, .omni-task-body { padding: .75rem; }
+  .omni-task-meta, .omni-task-hint, .omni-task-flag-group { margin-inline: .75rem; }
   .omni-history-button { width: 100%; }
 }

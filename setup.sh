@@ -21,7 +21,7 @@ echo "==> installing Python dependencies"
 ./.venv/bin/pip install --quiet \
     "Flask>=3.1" "Flask-SQLAlchemy>=3.1" numpy redis rq "Pillow>=12.3" \
     gunicorn "sentry-sdk[flask,sqlalchemy,rq]" Markdown Pygments \
-    flask-babel "Flask-Limiter[redis]"
+    flask-babel "Flask-Limiter[redis]" flask-sock
 
 echo "==> compiling gettext catalogs"
 ./.venv/bin/pybabel compile -d aperisolve/translations

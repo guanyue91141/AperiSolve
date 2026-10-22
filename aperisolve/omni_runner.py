@@ -19,6 +19,7 @@ from .omni_store import (
     task_path,
     write_state,
 )
+from .omni_events import publish_event
 
 MAX_TOOL_DETAIL_BYTES = 8 * 1024
 
@@ -89,6 +90,7 @@ def run(root: Path, task_id: str) -> None:
             if state["status"] == "stopping":
                 state.update(status="stopped", ended_at=time.time())
                 write_state(task, state)
+                publish_event(task_id, "task_changed")
                 return
             if state["status"] != "preparing":
                 return
@@ -115,12 +117,19 @@ def run(root: Path, task_id: str) -> None:
             state.update(status="running", started_at=time.time(), process=identity)
             write_state(task, state)
 
+        publish_event(task_id, "task_changed")
         with (task / "grok.log.txt").open("a", encoding="utf-8", buffering=1) as log:
             log.write("Grok 已启动，工作目录：" + str(task) + "\n")
+            log.flush()
+            publish_event(task_id, "log_changed")
+            last_log_event = time.monotonic()
             if child.stdout is not None:
                 for raw in child.stdout:
                     log.write(format_event(raw.decode("utf-8", errors="replace")))
                     log.flush()
+                    if time.monotonic() - last_log_event >= 0.25:
+                        publish_event(task_id, "log_changed")
+                        last_log_event = time.monotonic()
                 child.stdout.close()
             exit_code = child.wait()
             # Do not leave tool grandchildren running after the agent has exited.
@@ -134,6 +143,8 @@ def run(root: Path, task_id: str) -> None:
             status, error = _outcome(task, state, exit_code)
             state.update(status=status, ended_at=time.time(), exit_code=exit_code, error=error)
             write_state(task, state)
+        publish_event(task_id, "task_changed")
+        publish_event(task_id, "log_changed")
     except Exception as exc:  # noqa: BLE001 -- Last supervisor boundary must persist every failure.
         signal_group(identity, signal.SIGKILL)
         if child is not None:
@@ -149,6 +160,8 @@ def run(root: Path, task_id: str) -> None:
                     error="" if stopped else str(exc),
                 )
                 write_state(task, state)
+        publish_event(task_id, "task_changed")
+        publish_event(task_id, "log_changed")
 
 
 if __name__ == "__main__":

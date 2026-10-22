@@ -24,7 +24,8 @@ dependencies = [
     "Markdown",
     "Pygments",
     "flask-babel",
-    "Flask-Limiter[redis]"
+    "Flask-Limiter[redis]",
+    "flask-sock",
 ]
 
 [project.optional-dependencies]
