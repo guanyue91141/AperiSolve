@@ -305,14 +305,15 @@ def test_resume_latest_idle_session_with_absolute_new_problem_paths(omni_app: Fl
     assert state["resumed_from_task"] == first
     assert state["session_id"] == session["session_id"]
     prompt = (current / "prompt.txt").read_text()
-    assert prompt.startswith(
-        "这是全新题目；复用已有 skills，旧题答案不适用于本题\n",  # noqa: RUF001 -- User's exact text.
-    )
+    assert prompt.startswith("这是全新题目")
+    assert "复用当前会话中已加载的 skills" in prompt
+    assert "旧题的答案、附件和结论均不适用于本题。" in prompt  # noqa: RUF001 -- User-facing Chinese text.
     for path in ("uploads/题目.bin", "flag-re.txt", "solution.txt"):
         assert str(current / path) in prompt
     assert "这是 Web 源码题 none" in prompt
     assert "必须先读取" not in prompt
     assert "SKILL.md" not in prompt
+    assert "当本题需要尚未加载的技能时" in prompt
     assert "PCAP 流量题" not in prompt
     assert result["status"] == "no_flag"
     assert not (current / "flag-re.txt").exists()
@@ -374,7 +375,10 @@ def test_unavailable_sessions_start_a_fresh_conversation(
     args = json.loads((current / "invocation.txt").read_text())["args"]
     assert "--resume" not in args
     assert read_state(current)["session_id"] != state["session_id"]
-    assert "必须先读取 ctf-router" in (current / "prompt.txt").read_text()
+    prompt = (current / "prompt.txt").read_text()
+    assert "使用 ctf-router 技能" in prompt
+    assert "references/catalog.md" in prompt
+    assert "选择 1–3 个相关技能" in prompt
 
 
 def test_parallel_resumes_exclusively_lease_sessions_and_stop_releases_them(

@@ -143,7 +143,8 @@ def resume_prompt(task: Path, state: dict) -> str:
     instructions = state["instructions"]
     instruction_section = f"用户解题说明：\n{instructions}\n" if instructions.strip() else ""
     return (
-        "这是全新题目；复用已有 skills，旧题答案不适用于本题\n"
+        "这是全新题目；复用当前会话中已加载的 skills。旧题的答案、附件和结论均不适用于本题。\n"
+        "当本题需要尚未加载的技能时，再按已加载的 ctf-router 规则选择技能。\n"
         f"新题目录（绝对路径）：{task}\n"
         f"新题附件（绝对路径）：\n{attachments}\n"
         f"flag 输出（绝对路径）：{task / 'flag-re.txt'}\n"
