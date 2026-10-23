@@ -136,6 +136,7 @@
       <button type="button" class="btn btn-outline-danger omni-stop">停止任务</button>
       <div class="omni-preview-buttons" role="group" aria-label="任务文本">
         <button type="button" class="btn btn-outline-light omni-preview-button" data-path="grok.log.txt" aria-pressed="true">日志</button>
+        <button type="button" class="btn btn-outline-light omni-preview-button" data-path="solution.txt" aria-pressed="false">解题</button>
         <button type="button" class="btn btn-outline-light omni-preview-button" data-path="prompt.txt" aria-pressed="false">提示词</button>
         <button type="button" class="btn btn-outline-light omni-preview-button" data-path="flag-re.txt" aria-pressed="false">flag</button>
       </div></div>
@@ -207,6 +208,9 @@
       if (path === "flag-re.txt" && error.message.includes("404")) {
         row.output.textContent = "（空）";
         row.note.textContent = "";
+      } else if (path === "solution.txt" && error.message.includes("404")) {
+        row.output.textContent = "（解题记录尚未生成）";
+        row.note.textContent = "任务运行完成后，解题过程将显示在这里。";
       } else {
         row.output.textContent = "";
         row.note.textContent = `预览暂不可用：${error.message}`;
