@@ -121,8 +121,8 @@
     const seconds = Math.max(0, Math.floor(((task.ended_at || Date.now() / 1000) - (task.started_at || task.created_at))));
     return `${Math.floor(seconds / 3600)}时 ${Math.floor(seconds / 60) % 60}分 ${seconds % 60}秒`;
   }
-  function fileUrl(id, action, path, tail = false) {
-    return `${api(id, action)}?${new URLSearchParams({path, ...(tail ? {tail: "1"} : {})})}`;
+  function fileUrl(id, action, path, tail = false, solver = "grok") {
+    return `${api(id, action)}?${new URLSearchParams({path, solver, ...(tail ? {tail: "1"} : {})})}`;
   }
   function createRow(task) {
     const node = document.createElement("article");
@@ -135,19 +135,21 @@
       <span class="omni-task-flag-group"><code class="omni-task-flag"></code></span>
       <div class="omni-task-body" hidden>
       <p class="omni-task-error" role="status"></p><div class="omni-task-actions">
-      <button type="button" class="btn btn-outline-danger omni-stop">停止任务</button>
-      <div class="omni-preview-buttons" role="group" aria-label="任务文本">
-        <button type="button" class="btn btn-outline-light omni-preview-button" data-path="grok.log.txt" aria-pressed="true">日志</button>
-        <button type="button" class="btn btn-outline-light omni-preview-button" data-path="solution.txt" aria-pressed="false">解题</button>
-        <button type="button" class="btn btn-outline-light omni-preview-button" data-path="prompt.txt" aria-pressed="false">提示词</button>
-        <button type="button" class="btn btn-outline-light omni-preview-button" data-path="flag-re.txt" aria-pressed="false">flag</button>
+      <button type="button" class="btn btn-outline-danger omni-stop">停止当前分支</button>
+      <div class="omni-solver-buttons" role="group" aria-label="切换解题分支"></div>
+      <div class="omni-preview-buttons" role="group" aria-label="当前分支文件">
+        <button type="button" class="btn btn-outline-light omni-preview-button" data-file="log" aria-pressed="true">进度日志</button>
+        <button type="button" class="btn btn-outline-light omni-preview-button" data-file="solution.txt" aria-pressed="false">解题结果</button>
+        <button type="button" class="btn btn-outline-light omni-preview-button" data-file="prompt.txt" aria-pressed="false">提示词</button>
+        <button type="button" class="btn btn-outline-light omni-preview-button" data-file="flag-re.txt" aria-pressed="false">flag</button>
       </div></div>
       <p class="omni-preview-note text-muted small" role="status"></p><pre class="omni-preview" tabindex="0"></pre></div>`;
-    const row = {node, task, selected: "grok.log.txt", expanded: false, loading: false, previewVersion: 0};
+    const row = {node, task, selected: "grok.log.txt", selectedFile: "log", selectedSolver: "grok", expanded: false, loading: false, previewVersion: 0, solverButtonNodes: new Map()};
     row.output = node.querySelector(".omni-preview");
     row.note = node.querySelector(".omni-preview-note");
     row.stop = node.querySelector(".omni-stop");
     const body = node.querySelector(".omni-task-body");
+    row.solverButtons = node.querySelector(".omni-solver-buttons");
     const expand = node.querySelector(".omni-expand");
     expand.addEventListener("click", () => {
       row.expanded = !row.expanded;
@@ -157,18 +159,22 @@
       if (row.expanded) loadDetails(row);
     });
     node.querySelectorAll(".omni-preview-button").forEach((button) => button.addEventListener("click", () => {
-      row.selected = button.dataset.path;
+      row.selectedFile = button.dataset.file;
+      row.selected = row.selectedFile === "log"
+        ? (row.selectedSolver === "grok" ? "grok.log.txt" : "log.txt")
+        : row.selectedFile;
       node.querySelectorAll(".omni-preview-button").forEach((item) => {
         item.setAttribute("aria-pressed", String(item === button));
       });
       loadPreview(row);
     }));
     row.stop.addEventListener("click", async () => {
-      if (!window.confirm("确定要停止此任务吗？")) return;
+      const solver = row.task.solvers?.find((item) => item.id === row.selectedSolver);
+      if (!window.confirm(`确定只停止当前观察的“${solver?.name || row.selectedSolver}”分支吗？其他分支会继续运行。`)) return;
       row.stop.disabled = true;
       row.stop.textContent = "正在停止…";
       try {
-        const result = await json(api(task.id, "stop"), {method: "POST"});
+        const result = await json(api(task.id, `stop/${encodeURIComponent(row.selectedSolver)}`), {method: "POST"});
         updateRow(row, result);
         await loadDetails(row);
       } catch (error) {
@@ -189,7 +195,42 @@
     setText(row.node.querySelector(".omni-task-meta"), `${task.id.slice(0, 8)} · ${new Date(task.created_at * 1000).toLocaleString()} · ${duration(task)}`);
     setText(row.node.querySelector(".omni-task-flag"), task.flag || "");
     setText(row.node.querySelector(".omni-task-error"), task.error || "");
-    row.stop.hidden = !active.has(task.status);
+    const solvers = task.solvers || [];
+    if (!solvers.some((solver) => solver.id === row.selectedSolver)) row.selectedSolver = "grok";
+    for (const solver of solvers) {
+      let button = row.solverButtonNodes.get(solver.id);
+      if (!button) {
+        button = document.createElement("button");
+        button.type = "button";
+        button.className = "btn btn-sm";
+        button.addEventListener("click", () => {
+          row.selectedSolver = solver.id;
+          row.selected = row.selectedFile === "log"
+            ? (solver.id === "grok" ? "grok.log.txt" : "log.txt")
+            : row.selectedFile;
+          updateRow(row, row.task);
+          if (row.expanded) loadPreview(row);
+        });
+        row.solverButtonNodes.set(solver.id, button);
+      }
+      button.classList.toggle("btn-primary", solver.id === row.selectedSolver);
+      button.classList.toggle("btn-outline-light", solver.id !== row.selectedSolver);
+      button.textContent = `${solver.name} · ${statuses[solver.status] || solver.status}`;
+      button.setAttribute("aria-pressed", String(solver.id === row.selectedSolver));
+      row.solverButtons.append(button);
+    }
+    for (const [solverId, button] of row.solverButtonNodes) {
+      if (!solvers.some((solver) => solver.id === solverId)) {
+        button.remove();
+        row.solverButtonNodes.delete(solverId);
+      }
+    }
+    const selectedSolver = solvers.find((solver) => solver.id === row.selectedSolver);
+    row.stop.hidden = !active.has(selectedSolver?.status);
+    row.stop.textContent = `停止 ${selectedSolver?.name || "当前分支"}`;
+    row.node.querySelectorAll(".omni-preview-button").forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.file === row.selectedFile));
+    });
   }
   async function loadPreview(row) {
     const path = row.selected;
@@ -197,7 +238,7 @@
     const version = ++row.previewVersion;
     row.output.textContent = "正在读取…";
     try {
-      const data = await json(fileUrl(row.task.id, "text", path, path === "grok.log.txt"));
+      const data = await json(fileUrl(row.task.id, "text", path, path === "grok.log.txt" || path === "log.txt", row.selectedSolver));
       if (version !== row.previewVersion || sidebar.hidden || !row.expanded) return;
       const atEnd = row.output.scrollTop + row.output.clientHeight >= row.output.scrollHeight - 30;
       row.output.textContent = data.text || (path === "flag-re.txt" ? "（空）" : "（内容为空，运行中任务会自动更新）");
@@ -208,9 +249,9 @@
       if (path === "flag-re.txt" && error.message.includes("404")) {
         row.output.textContent = "（空）";
         row.note.textContent = "";
-      } else if (path === "solution.txt" && error.message.includes("404")) {
+      } else if ((path === "solution.txt" || path === "log.txt") && error.message.includes("404")) {
         row.output.textContent = "（解题记录尚未生成）";
-        row.note.textContent = "任务运行完成后，解题过程将显示在这里。";
+        row.note.textContent = "该分支运行后会在这里显示进度与产物。";
       } else {
         row.output.textContent = "";
         row.note.textContent = `预览暂不可用：${error.message}`;
@@ -270,8 +311,8 @@
     const row = rows.get(event.task_id);
     if (!row) return;
     if (event.type === "task_changed") loadTask(event.task_id);
-    if (event.type === "log_changed" && row.expanded && row.selected === "grok.log.txt") {
-      setText(row.note, "日志有新内容；点击“日志”按钮可刷新预览。");
+    if (event.type === "log_changed" && row.expanded && row.selectedFile === "log") {
+      loadPreview(row);
     }
   }
   function connectSocket() {

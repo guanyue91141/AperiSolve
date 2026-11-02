@@ -2,6 +2,7 @@
 
 # ruff: noqa: RUF001 -- Chinese interface copy uses Chinese punctuation.
 
+import concurrent.futures
 import contextlib
 import json
 import signal
@@ -12,6 +13,7 @@ from pathlib import Path
 from typing import TextIO
 
 from .omni_events import publish_event
+from .omni_prompts import pi_prompt
 from .omni_sessions import DEFAULT_SESSION_MAX_AGE, SessionLease, claim_session, resume_prompt
 from .omni_store import (
     locked,
@@ -124,26 +126,167 @@ def _launch_cli(task: Path, state: dict, lease: SessionLease) -> subprocess.Pope
 
 
 def _finish_task(task: Path, exit_code: int, *, session_confirmed: bool) -> None:
-    """Persist the terminal result without overwriting a completed stop request."""
+    """Finish the Grok branch without ending active parallel Pi branches."""
     with locked(task):
         state = read_state(task)
-        if state["status"] not in {"running", "stopping"}:
+        solver = state.get("solvers", {}).get("grok", {})
+        if solver.get("status") not in {"running", "stopping"}:
             return
         status, error = _outcome(task, state, exit_code)
-        state.update(
-            status=status,
-            ended_at=time.time(),
-            exit_code=exit_code,
-            error=error,
-            session_confirmed=session_confirmed,
-        )
+        if solver.get("status") == "stopping":
+            status, error = "stopped", ""
+        solver.update(status=status, ended_at=time.time(), exit_code=exit_code, error=error)
+        solver["session_confirmed"] = session_confirmed
+        if status == "completed":
+            with contextlib.suppress(OSError):
+                solver["flag"] = preview(task, "flag-re.txt")["text"].strip()
+        state.update(exit_code=exit_code, session_confirmed=session_confirmed)
+        _update_overall(state)
         write_state(task, state)
     publish_event(task.name, "task_changed")
     publish_event(task.name, "log_changed")
 
 
-def run(root: Path, task_id: str) -> None:
-    """Run Grok and persist its terminal state, even without a web server."""
+def _update_overall(state: dict) -> None:
+    statuses = [solver.get("status") for solver in state.get("solvers", {}).values()]
+    if any(status in {"preparing", "running", "stopping"} for status in statuses):
+        state["status"] = "running"
+        return
+    state["status"] = (
+        "completed"
+        if "completed" in statuses
+        else "no_flag"
+        if "no_flag" in statuses
+        else "stopped"
+        if "stopped" in statuses
+        else "failed"
+    )
+    state["ended_at"] = time.time()
+
+
+def _pi_event_text(line: str) -> str:  # noqa: PLR0911 -- Each event family has one small renderer.
+    """Show Pi text deltas and tool names without dumping tool arguments/results."""
+    try:
+        event = json.loads(line)
+    except (ValueError, TypeError):
+        return line
+    if not isinstance(event, dict):
+        return ""
+    if event.get("type") == "message_update":
+        update = event.get("assistantMessageEvent", {})
+        if update.get("type") in {"text_delta", "thinking_delta"}:
+            return str(update.get("delta", ""))
+    if event.get("type") == "tool_execution_start":
+        return f"\n[Pi 正在使用工具：{event.get('toolName', '未知')}]\n"
+    if event.get("type") == "agent_start":
+        return "\nPi 开始分析。\n"
+    if event.get("type") == "agent_settled":
+        return "\nPi 分析已结束。\n"
+    if event.get("type") == "error":
+        return f"\nPi 错误：{event.get('message', event.get('error', '未知错误'))}\n"
+    return ""
+
+
+def _run_pi(task: Path, solver_id: str) -> None:  # noqa: PLR0915 -- Worker owns a single process lifecycle.
+    """Run one Pi solver with its own cwd, session store, log, and artifacts."""
+    child = None
+    identity = None
+    try:
+        with locked(task):
+            state = read_state(task)
+            solver = state["solvers"][solver_id]
+            if solver["status"] != "preparing":
+                return
+            workspace = Path(solver["workspace"])
+            (workspace / "prompt.txt").write_text(
+                pi_prompt(
+                    task,
+                    workspace,
+                    state["uploads"],
+                    state["instructions"],
+                    int(solver_id.removeprefix("pi-")),
+                ),
+                encoding="utf-8",
+            )
+            child = subprocess.Popen(  # noqa: S603 -- Configured CLI and generated task paths.
+                [
+                    state["pi_cli"],
+                    "--mode",
+                    "json",
+                    "--session-dir",
+                    str(workspace / "sessions"),
+                    "--session-id",
+                    f"aperisolve-{task.name}-{solver_id}",
+                    "--skill",
+                    state["skill_path"],
+                    "--approve",
+                    "@prompt.txt",
+                ],
+                cwd=workspace,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            identity = process_identity(child.pid)
+            solver.update(status="running", started_at=time.time(), process=identity)
+            write_state(task, state)
+        publish_event(task.name, "task_changed")
+        log_path = workspace / "log.txt"
+        with log_path.open("a", encoding="utf-8", buffering=1) as log:
+            log.write(f"Pi 启动，工作目录：{workspace}\n")
+            if child.stdout is not None:
+                for raw in child.stdout:
+                    text = _pi_event_text(raw.decode("utf-8", errors="replace"))
+                    if text:
+                        log.write(text)
+                        log.flush()
+                        publish_event(task.name, "log_changed")
+                child.stdout.close()
+            exit_code = child.wait()
+        signal_group(identity, signal.SIGKILL)
+        flag_path = workspace / "flag-re.txt"
+        has_flag = flag_path.is_file() and flag_path.stat().st_size > 0
+        status = (
+            "completed"
+            if exit_code == 0 and has_flag
+            else "no_flag"
+            if exit_code == 0
+            else "failed"
+        )
+        error = "" if exit_code == 0 else f"Pi CLI 退出码为 {exit_code}，请查看该分支日志。"
+        with locked(task):
+            state = read_state(task)
+            solver = state["solvers"][solver_id]
+            if solver.get("status") == "stopping":
+                status, error = "stopped", ""
+            solver.update(status=status, ended_at=time.time(), exit_code=exit_code, error=error)
+            if status == "completed":
+                solver["flag"] = flag_path.read_text(encoding="utf-8").strip()
+            _update_overall(state)
+            write_state(task, state)
+        publish_event(task.name, "task_changed")
+    except Exception as exc:  # noqa: BLE001 -- Persist worker failures for task observers.
+        signal_group(identity, signal.SIGKILL)
+        if child is not None:
+            with contextlib.suppress(Exception):
+                child.wait(timeout=5)
+        with locked(task):
+            state = read_state(task)
+            solver = state["solvers"][solver_id]
+            stopped = solver.get("status") == "stopping"
+            solver.update(
+                status="stopped" if stopped else "failed",
+                ended_at=time.time(),
+                error="" if stopped else str(exc),
+            )
+            _update_overall(state)
+            write_state(task, state)
+        publish_event(task.name, "task_changed")
+
+
+def _run_grok(root: Path, task_id: str) -> None:
+    """Run the existing Grok branch concurrently with Pi workers."""
     task = task_path(root, task_id)
     child = None
     identity = None
@@ -151,12 +294,7 @@ def run(root: Path, task_id: str) -> None:
     try:
         with locked(task):
             state = read_state(task)
-            if state["status"] == "stopping":
-                state.update(status="stopped", ended_at=time.time())
-                write_state(task, state)
-                publish_event(task_id, "task_changed")
-                return
-            if state["status"] != "preparing":
+            if state.get("solvers", {}).get("grok", {}).get("status") != "preparing":
                 return
             lease = claim_session(
                 root,
@@ -168,6 +306,11 @@ def run(root: Path, task_id: str) -> None:
             child = _launch_cli(task, state, lease)
             identity = process_identity(child.pid)
             state.update(status="running", started_at=time.time(), process=identity)
+            state["solvers"]["grok"].update(
+                status="running",
+                started_at=time.time(),
+                process=identity,
+            )
             write_state(task, state)
 
         publish_event(task_id, "task_changed")
@@ -196,19 +339,33 @@ def run(root: Path, task_id: str) -> None:
                 child.wait(timeout=5)
         with locked(task):
             state = read_state(task)
-            if state["status"] in {"preparing", "running", "stopping"}:
-                stopped = state["status"] == "stopping"
-                state.update(
+            solver = state.get("solvers", {}).get("grok", {})
+            if solver.get("status") in {"preparing", "running", "stopping"}:
+                stopped = solver.get("status") == "stopping"
+                solver.update(
                     status="stopped" if stopped else "failed",
                     ended_at=time.time(),
                     error="" if stopped else str(exc),
                 )
+                _update_overall(state)
                 write_state(task, state)
         publish_event(task_id, "task_changed")
         publish_event(task_id, "log_changed")
     finally:
         if lease is not None:
             lease.close()
+
+
+def run(root: Path, task_id: str) -> None:
+    """Run Grok alongside all Pi workers under one detachable supervisor."""
+    task = task_path(root, task_id)
+    state = read_state(task)
+    pi_ids = [solver_id for solver_id in state.get("solvers", {}) if solver_id.startswith("pi-")]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(pi_ids))) as pool:
+        futures = [pool.submit(_run_pi, task, solver_id) for solver_id in pi_ids]
+        _run_grok(root, task_id)
+        for future in futures:
+            future.result()
 
 
 if __name__ == "__main__":

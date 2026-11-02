@@ -29,3 +29,31 @@ def problem_prompt(task: Path, uploads: list[dict], instructions: str) -> str:
         "若未找到答案，保存已取得的进展与原因，不要编造答案或将无依据猜测写入 flag-re.txt。"
         "这是无人值守任务，将缺失信息和错误写入日志，自主选择可行方法继续推进。\n"
     )
+
+
+def pi_prompt(
+    task: Path,
+    workspace: Path,
+    uploads: list[dict],
+    instructions: str,
+    index: int,
+) -> str:
+    """Give each Pi worker the same evidence and an isolated writable workspace."""
+    attachments = "\n".join(f"- {task / item['path']}" for item in uploads) or "（无附件）"
+    instruction_section = f"\n用户解题说明原文：\n{instructions}\n" if instructions.strip() else ""
+    angle = (
+        "请独立进行全面取证与解题，优先检查文件格式、元数据、嵌入内容及可用工具。"
+        if index == 1
+        else "请独立寻找替代思路，并重点复核关键线索、尝试不同工具或假设。"
+    )
+    return (
+        f"这是 AperiSolve 深度分析并行分支 Pi {index}。{angle}\n"
+        "只根据本题附件和公开资料解题；结论必须可由附件或命令输出验证，不能编造 flag。\n"
+        f"本分支工作目录：{workspace}\n题目目录：{task}\n"
+        f"附件：\n{attachments}\n"
+        f"{instruction_section}"
+        "先检查已有工具，需要时可安装并使用解题工具。把所有临时文件、脚本和输出写入本分支工作目录。\n"
+        f"找到并核验答案后，将原文写入 {workspace / 'flag-re.txt'}，每行一个答案；"
+        f"把简明解题过程和关键证据写入 {workspace / 'solution.txt'}。"
+        "未找到答案时，只保存已验证进展和原因，不要猜测或创建 flag-re.txt。"
+    )

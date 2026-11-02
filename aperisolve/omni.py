@@ -84,6 +84,9 @@ def configure_omni(app: Flask) -> None:
     app.request_class = OmniRequest
     app.config["OMNI_DATA_FOLDER"] = Path(os.getenv("OMNI_DATA_FOLDER", str(PROJECT_ROOT / "data")))
     app.config["GROK_CLI"] = os.getenv("GROK_CLI", str(Path.home() / ".local/bin/grok"))
+    app.config["PI_CLI"] = os.getenv("PI_CLI", str(Path.home() / ".local/bin/pi"))
+    app.config["PI_PARALLEL_AGENTS"] = min(4, max(1, int(os.getenv("PI_PARALLEL_AGENTS", "2"))))
+    app.config["PI_WORKSPACE_ROOT"] = Path(os.getenv("PI_WORKSPACE_ROOT", str(PROJECT_ROOT / "pi")))
     app.config["OMNI_SKILL_PATH"] = os.getenv(
         "OMNI_SKILL_PATH",
         str(Path.home() / ".grok/skills/ctf-router/SKILL.md"),
@@ -124,6 +127,36 @@ def _task(task_id: str) -> Path:
         abort(404)
 
 
+def _solver_file(task: Path, solver_id: str, relative: str) -> tuple[Path, str]:
+    """Resolve a bounded preview/download path inside the selected solver workspace."""
+    state = read_state(task)
+    solver = state.get("solvers", {}).get(solver_id)
+    if solver is None and solver_id == "grok" and "solvers" not in state:
+        solver = {"status": state.get("status", "failed")}
+    if solver is None:
+        abort(404)
+    if solver_id == "grok":
+        return task, relative
+    if not solver_id.startswith("pi-") or relative not in {
+        "log.txt",
+        "prompt.txt",
+        "solution.txt",
+        "flag-re.txt",
+    }:
+        abort(404)
+    workspace = (
+        Path(current_app.config["PI_WORKSPACE_ROOT"]).expanduser().resolve() / task.name / solver_id
+    )
+    if (
+        solver.get("workspace") != str(workspace)
+        or workspace.is_symlink()
+        or workspace.parent.is_symlink()
+        or workspace.parent.parent.is_symlink()
+    ):
+        abort(404)
+    return workspace, relative
+
+
 def launch_runner(root: Path, task_id: str, log: BinaryIO) -> subprocess.Popen:
     """Detach the supervisor from web-server signals and reap it when possible."""
     process = subprocess.Popen(  # noqa: S603 -- Fixed Python module, generated ID, no shell.
@@ -141,11 +174,12 @@ def launch_runner(root: Path, task_id: str, log: BinaryIO) -> subprocess.Popen:
 
 @omni_bp.post("")
 def create_task() -> tuple[Response, int]:  # noqa: PLR0915 -- One upload/save/launch boundary.
-    """Save a batch and start its own Grok process; never enqueue image analysis."""
+    """Save a batch and start its own Grok and Pi solver processes."""
     cli = shutil.which(current_app.config["GROK_CLI"])
+    pi_cli = shutil.which(current_app.config["PI_CLI"])
     skill = Path(current_app.config["OMNI_SKILL_PATH"]).expanduser().resolve()
-    if not cli or not skill.is_file():
-        return jsonify(error="Grok CLI 或 ctf-router 技能不可用，请检查本机配置。"), 503
+    if not cli or not pi_cli or not skill.is_file():
+        return jsonify(error="Grok/Pi CLI 或 ctf-router 技能不可用，请检查本机配置。"), 503
     instructions = request.form.get("instructions", "")
     uploads = [upload for upload in request.files.getlist("files") if upload.filename]
     if not uploads and not instructions.strip():
@@ -153,10 +187,14 @@ def create_task() -> tuple[Response, int]:  # noqa: PLR0915 -- One upload/save/l
     root = _root()
     task_id = uuid.uuid4().hex
     task = root / task_id
+    workspace = Path(current_app.config["PI_WORKSPACE_ROOT"]).expanduser().resolve() / task_id
     saved = False
     try:
         (task / "uploads").mkdir(parents=True)
         (task / ".aperisolve").mkdir()
+        workspace.mkdir(parents=True)
+        for index in range(1, current_app.config["PI_PARALLEL_AGENTS"] + 1):
+            (workspace / f"pi-{index}").mkdir()
         names = []
         for upload in uploads:
             name = (upload.filename or "attachment").replace("\\", "/").rsplit("/", 1)[-1]
@@ -203,6 +241,20 @@ def create_task() -> tuple[Response, int]:  # noqa: PLR0915 -- One upload/save/l
             "error": "",
             "exit_code": None,
             "grok_cli": cli,
+            "pi_cli": pi_cli,
+            "pi_workspace": str(workspace),
+            "solvers": {
+                "grok": {"name": "Grok", "status": "preparing", "process": None},
+                **{
+                    f"pi-{index}": {
+                        "name": f"Pi {index}",
+                        "status": "preparing",
+                        "process": None,
+                        "workspace": str(workspace / f"pi-{index}"),
+                    }
+                    for index in range(1, current_app.config["PI_PARALLEL_AGENTS"] + 1)
+                },
+            },
             "skill_path": str(skill),
             "session_max_age": current_app.config["OMNI_SESSION_MAX_AGE"],
         }
@@ -223,6 +275,7 @@ def create_task() -> tuple[Response, int]:  # noqa: PLR0915 -- One upload/save/l
                 write_state(task, state)
         else:
             shutil.rmtree(task, ignore_errors=True)
+            shutil.rmtree(workspace, ignore_errors=True)
         return jsonify(error=f"无法保存或启动任务：{exc}"), 503
 
 
@@ -263,9 +316,15 @@ def get_task(task_id: str) -> Response:
 def get_text(task_id: str) -> Response:
     """Preview a bounded portion of an uploaded or generated TXT file."""
     try:
-        result = preview(
-            _task(task_id),
+        task = _task(task_id)
+        root, relative = _solver_file(
+            task,
+            request.args.get("solver", "grok"),
             request.args.get("path", ""),
+        )
+        result = preview(
+            root,
+            relative,
             tail=request.args.get("tail") == "1",
         )
     except OSError:
@@ -280,7 +339,9 @@ def download_file(task_id: str) -> Response:
     """Download a regular file inside this task only."""
     relative = request.args.get("path", "")
     try:
-        stream = open_task_file(_task(task_id), relative)
+        task = _task(task_id)
+        root, relative = _solver_file(task, request.args.get("solver", "grok"), relative)
+        stream = open_task_file(root, relative)
     except OSError:
         abort(404)
     response = send_file(
@@ -294,17 +355,35 @@ def download_file(task_id: str) -> Response:
     return response
 
 
-@omni_bp.post("/<task_id>/stop")
-def stop_task(task_id: str) -> Response:
-    """Stop the Grok session with a bounded grace period, retaining all files."""
+@omni_bp.post("/<task_id>/stop/<solver_id>")
+def stop_task(task_id: str, solver_id: str) -> Response:
+    """Stop only the selected solver branch, retaining the other parallel runs."""
     task = _task(task_id)
     with locked(task):
         state = read_state(task)
-        if state["status"] not in ACTIVE:
+        solvers = state.setdefault("solvers", {})
+        if not solvers:
+            solvers["grok"] = {
+                "name": "Grok",
+                "status": state.get("status", "failed"),
+                "process": state.get("process"),
+            }
+        solver = solvers.get(solver_id)
+        if solver is None:
+            abort(404)
+        if solver["status"] not in ACTIVE:
             return jsonify(public_state(task, state))
-        state["status"] = "stopping"
+        solver["status"] = "stopping"
+        if solver_id == "grok":
+            state["status"] = (
+                "running"
+                if any(
+                    item["status"] in ACTIVE for key, item in solvers.items() if key != solver_id
+                )
+                else "stopping"
+            )
         write_state(task, state)
-        identity = state.get("process")
+        identity = solver.get("process") or (state.get("process") if solver_id == "grok" else None)
         signal_group(identity, signal.SIGTERM)
     publish_event(task_id, "task_changed")
     deadline = time.monotonic() + 5
@@ -318,8 +397,24 @@ def stop_task(task_id: str) -> Response:
         time.sleep(0.01)
     with locked(task):
         state = read_state(task)
-        if state["status"] == "stopping" and not process_alive(identity):
-            state.update(status="stopped", ended_at=time.time(), error="")
+        solver = state.get("solvers", {}).get(solver_id, {})
+        if solver.get("status") == "stopping" and not process_alive(identity):
+            solver.update(status="stopped", ended_at=time.time(), error="")
+            active_solvers = [
+                item for item in state.get("solvers", {}).values() if item["status"] in ACTIVE
+            ]
+            statuses = [item["status"] for item in state.get("solvers", {}).values()]
+            state["status"] = (
+                "running"
+                if active_solvers
+                else "completed"
+                if "completed" in statuses
+                else "no_flag"
+                if "no_flag" in statuses
+                else "stopped"
+            )
+            if not active_solvers:
+                state.update(ended_at=time.time(), error="")
             write_state(task, state)
     publish_event(task_id, "task_changed")
     return jsonify(public_state(task, state))

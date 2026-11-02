@@ -72,12 +72,33 @@ def omni_app(app: Flask, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Fla
         stream.write(
             "print(json.dumps({'type': 'end', 'sessionId': sid, 'cwd': cwd}), flush=True)\n",
         )
+    pi_cli = tmp_path / "pi-test"
+    pi_cli.write_text(
+        "#!/usr/bin/python3\n"
+        "import json, pathlib, sys, time\n"
+        "prompt = pathlib.Path(sys.argv[-1][1:]).read_text()\n"
+        "p = pathlib.Path.cwd()\n"
+        "print(json.dumps({'type':'agent_start'}), flush=True)\n"
+        "print(json.dumps({'type':'message_update','assistantMessageEvent':"
+        "{'type':'text_delta','delta':'Pi正在解题'}}), flush=True)\n"
+        "if 'hold' in prompt: time.sleep(90)\n"
+        "if 'slow' in prompt: time.sleep(2)\n"
+        "if 'fail' in prompt: sys.exit(7)\n"
+        "if 'none' not in prompt: (p / 'flag-re.txt').write_text('exp{pi_test}\\n')\n"
+        "(p / 'solution.txt').write_text('Pi 验证附件')\n"
+        "print(json.dumps({'type':'agent_settled','aborted':False}), flush=True)\n",
+        encoding="utf-8",
+    )
+    pi_cli.chmod(0o755)
     monkeypatch.setenv("GROK_HOME", str(tmp_path / "grok-home"))
     skill = tmp_path / "SKILL.md"
     skill.write_text("test skill", encoding="utf-8")
     app.config.update(
         OMNI_DATA_FOLDER=tmp_path / "data",
         GROK_CLI=str(cli),
+        PI_CLI=str(pi_cli),
+        PI_PARALLEL_AGENTS=2,
+        PI_WORKSPACE_ROOT=tmp_path / "pi",
         OMNI_SKILL_PATH=str(skill),
     )
     return app
@@ -116,6 +137,14 @@ def wait_task(
             return task
         time.sleep(0.05)
     pytest.fail(f"Task {task_id} did not reach {expected}: {task}")
+
+
+def stop_all(client: FlaskClient, task_id: str) -> None:
+    """Stop each solver explicitly, matching the per-observed-branch UI action."""
+    task = client.get(f"/api/omni/tasks/{task_id}").json
+    for solver in task.get("solvers", []):
+        if solver["status"] in {"preparing", "running", "stopping"}:
+            client.post(f"/api/omni/tasks/{task_id}/stop/{solver['id']}")
 
 
 def fake_launch(monkeypatch: pytest.MonkeyPatch) -> list[tuple[Path, str]]:
@@ -250,6 +279,9 @@ def test_missing_files_and_missing_cli_do_not_start(
     assert post(client, instructions="", files=[(io.BytesIO(b"x"), "")]).status_code == 400
     omni_app.config["GROK_CLI"] = "/does-not-exist"
     assert post(client).status_code == 503
+    omni_app.config["GROK_CLI"] = str(omni_app.config["PI_CLI"])
+    omni_app.config["PI_CLI"] = "/does-not-exist"
+    assert post(client).status_code == 503
     assert not calls
 
 
@@ -314,6 +346,23 @@ def test_real_runner_output_and_exit_states(
     assert download.status_code == 200
     assert download.data.decode() == log
     assert task["flag"] == ("exp{omni_test}" if status == "completed" else "")
+    state = read_state(folder)
+    pi_solvers = [
+        solver for solver_id, solver in state["solvers"].items() if solver_id.startswith("pi-")
+    ]
+    assert len(pi_solvers) == 2
+    assert len({solver["workspace"] for solver in pi_solvers}) == 2
+    assert all(
+        Path(solver["workspace"]).is_relative_to(omni_app.config["PI_WORKSPACE_ROOT"])
+        for solver in pi_solvers
+    )
+    assert all(solver["status"] == status for solver in pi_solvers)
+    pi_log = client.get(
+        f"/api/omni/tasks/{task_id}/text",
+        query_string={"solver": "pi-1", "path": "log.txt", "tail": "1"},
+    )
+    assert pi_log.status_code == 200
+    assert "Pi正在解题" in pi_log.json["text"]
 
 
 def test_parallel_tasks_and_new_app_keep_running(omni_app: Flask) -> None:
@@ -449,7 +498,10 @@ def test_parallel_resumes_exclusively_lease_sessions_and_stop_releases_them(
         assert len({state["session_id"] for state in states}) == 2
         assert sum(state["session_id"] == session_id for state in states) == 1
         for task_id in running:
-            assert client.post(f"/api/omni/tasks/{task_id}/stop").json["status"] == "stopped"
+            first_stop = client.post(f"/api/omni/tasks/{task_id}/stop/grok")
+            assert first_stop.json["solvers"][0]["status"] == "stopped"
+            assert first_stop.json["status"] == "running"
+            stop_all(client, task_id)
         deadline = time.monotonic() + 3
         while any(process_alive(state["runner"]) for state in states):
             assert time.monotonic() < deadline
@@ -461,7 +513,7 @@ def test_parallel_resumes_exclusively_lease_sessions_and_stop_releases_them(
         assert read_state(root / final)["resumed_from_task"] == latest
     finally:
         for task_id in running:
-            client.post(f"/api/omni/tasks/{task_id}/stop")
+            stop_all(client, task_id)
 
 
 def test_runner_survives_submitter_exit(omni_app: Flask) -> None:
@@ -492,6 +544,38 @@ def test_runner_survives_submitter_exit(omni_app: Flask) -> None:
     assert wait_task(omni_app.test_client(), task_id)["status"] == "completed"
 
 
+def test_stopping_one_pi_branch_keeps_other_solvers_running(omni_app: Flask) -> None:
+    """A stop request affects only the Pi branch currently selected in the UI."""
+    client = omni_app.test_client()
+    task_id = post(client, "hold").json["task_id"]
+    folder = omni_app.config["OMNI_DATA_FOLDER"] / task_id
+    try:
+        wait_task(client, task_id, statuses={"running"})
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            state = read_state(folder)
+            if all(
+                state["solvers"][solver_id]["status"] == "running"
+                for solver_id in ("grok", "pi-1", "pi-2")
+            ):
+                break
+            time.sleep(0.05)
+        state = read_state(folder)
+        second_pi = state["solvers"]["pi-2"]["process"]
+        grok = state["solvers"]["grok"]["process"]
+        response = client.post(f"/api/omni/tasks/{task_id}/stop/pi-1")
+        assert response.status_code == 200
+        solvers = {solver["id"]: solver for solver in response.json["solvers"]}
+        assert solvers["pi-1"]["status"] == "stopped"
+        assert solvers["pi-2"]["status"] == "running"
+        assert solvers["grok"]["status"] == "running"
+        assert response.json["status"] == "running"
+        assert process_alive(second_pi)
+        assert process_alive(grok)
+    finally:
+        stop_all(client, task_id)
+
+
 def test_stop_kills_stubborn_descendants_and_preserves_files(omni_app: Flask) -> None:
     """Kill an entire stubborn tool session while retaining its artifacts."""
     client = omni_app.test_client()
@@ -505,9 +589,10 @@ def test_stop_kills_stubborn_descendants_and_preserves_files(omni_app: Flask) ->
             time.sleep(0.05)
         child_identity = process_identity(int((folder / "child.pid").read_text()))
         state = read_state(folder)
-        response = client.post(f"/api/omni/tasks/{task_id}/stop")
+        response = client.post(f"/api/omni/tasks/{task_id}/stop/grok")
         assert response.status_code == 200
-        assert response.json["status"] == "stopped"
+        assert response.json["solvers"][0]["status"] == "stopped"
+        assert response.json["status"] == "running"
         assert not process_alive(state["process"])
         deadline = time.monotonic() + 2
         while process_alive(child_identity) and time.monotonic() < deadline:
@@ -515,9 +600,12 @@ def test_stop_kills_stubborn_descendants_and_preserves_files(omni_app: Flask) ->
         assert not process_alive(child_identity)
         assert (folder / "uploads/题目.bin").exists()
         assert (folder / "grok.log.txt").exists()
-        assert client.post(f"/api/omni/tasks/{task_id}/stop").json["status"] == "stopped"
+        assert (
+            client.post(f"/api/omni/tasks/{task_id}/stop/grok").json["solvers"][0]["status"]
+            == "stopped"
+        )
     finally:
-        client.post(f"/api/omni/tasks/{task_id}/stop")
+        stop_all(client, task_id)
 
 
 def test_previews_downloads_and_path_boundaries(
@@ -577,7 +665,37 @@ def test_stale_runner_pid_identity_and_terminal_stop(
         write_state(folder, state)
     response = client.get(f"/api/omni/tasks/{task_id}")
     assert response.json["status"] == "failed"
-    assert client.post(f"/api/omni/tasks/{task_id}/stop").json["status"] == "failed"
+    assert client.post(f"/api/omni/tasks/{task_id}/stop/grok").json["status"] == "failed"
+
+
+def test_legacy_grok_only_task_still_exposes_stop_and_preview(
+    omni_app: Flask,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep retained tasks from before Pi parallel branches manageable."""
+    fake_launch(monkeypatch)
+    client = omni_app.test_client()
+    task_id = post(client).json["task_id"]
+    folder = omni_app.config["OMNI_DATA_FOLDER"] / task_id
+    (folder / "grok.log.txt").write_text("legacy progress\n")
+    with locked(folder):
+        state = read_state(folder)
+        state.pop("solvers")
+        state["status"] = "preparing"
+        state["runner"] = process_identity(os.getpid())
+        write_state(folder, state)
+    task = client.get(f"/api/omni/tasks/{task_id}").json
+    assert task["solvers"] == [
+        {"id": "grok", "name": "Grok", "status": "preparing", "error": ""},
+    ]
+    preview = client.get(
+        f"/api/omni/tasks/{task_id}/text",
+        query_string={"solver": "grok", "path": "grok.log.txt"},
+    )
+    assert preview.json["text"] == "legacy progress\n"
+    stopped = client.post(f"/api/omni/tasks/{task_id}/stop/grok")
+    assert stopped.json["status"] == "stopped"
+    assert stopped.json["solvers"][0]["status"] == "stopped"
 
 
 def test_records_paginate_and_home_has_no_detail_navigation(
@@ -598,5 +716,8 @@ def test_records_paginate_and_home_has_no_detail_navigation(
     home = client.get("/").get_data(as_text=True)
     assert 'id="omni-mode"' in home
     assert 'id="omni-history"' in home
+    script = client.get("/static/js/omni.js").get_data(as_text=True)
+    assert "omni-solver-buttons" in script
+    assert "stop/${encodeURIComponent(row.selectedSolver)}" in script
     assert "任务记录" in home
     assert client.get(f"/omni/tasks/{ids[0]}").status_code == 404

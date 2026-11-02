@@ -120,10 +120,19 @@ def reconcile(task: Path) -> dict:
         state = read_state(task)
         if state["status"] in ACTIVE and not process_alive(state.get("runner")):
             # Startup writes the runner identity before releasing this lock.
+            for solver in state.get("solvers", {}).values():
+                signal_group(solver.get("process"), signal.SIGKILL)
             signal_group(state.get("process"), signal.SIGKILL)
             stopped = state["status"] == "stopping"
             state.update(status="stopped" if stopped else "failed", ended_at=time.time())
             state["error"] = "" if stopped else "后台解题进程异常退出；已保留任务文件和日志。"
+            for solver in state.get("solvers", {}).values():
+                if solver.get("status") in ACTIVE:
+                    solver.update(
+                        status="stopped" if stopped else "failed",
+                        ended_at=time.time(),
+                        error="" if stopped else state["error"],
+                    )
             write_state(task, state)
         return state
 
@@ -166,7 +175,7 @@ def preview(task: Path, relative: str, *, tail: bool = False) -> dict:
     }
 
 
-def public_state(task: Path, state: dict, *, detail: bool = False) -> dict:
+def public_state(task: Path, state: dict, *, detail: bool = False) -> dict:  # noqa: C901 -- One bounded public serializer.
     """Expose display data without internal process configuration."""
     result = {
         key: state.get(key)
@@ -211,4 +220,32 @@ def public_state(task: Path, state: dict, *, detail: bool = False) -> dict:
             if len(files) >= MAX_TASK_FILES:
                 break
         result.update(files=files, files_truncated=len(files) >= MAX_TASK_FILES)
+    if state.get("solvers"):
+        result["solvers"] = [
+            {
+                "id": solver_id,
+                "name": solver.get("name", solver_id),
+                "status": solver.get("status", state["status"]),
+                "error": solver.get("error", ""),
+            }
+            for solver_id, solver in state["solvers"].items()
+        ]
+        if state["status"] == "completed" and not result["flag"]:
+            result["flag"] = next(
+                (
+                    solver.get("flag", "")
+                    for solver in state["solvers"].values()
+                    if solver.get("flag")
+                ),
+                "",
+            )
+    else:
+        result["solvers"] = [
+            {
+                "id": "grok",
+                "name": "Grok",
+                "status": state["status"],
+                "error": state.get("error", ""),
+            },
+        ]
     return result
