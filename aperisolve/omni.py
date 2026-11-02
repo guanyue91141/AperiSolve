@@ -85,7 +85,7 @@ def configure_omni(app: Flask) -> None:
     app.config["OMNI_DATA_FOLDER"] = Path(os.getenv("OMNI_DATA_FOLDER", str(PROJECT_ROOT / "data")))
     app.config["GROK_CLI"] = os.getenv("GROK_CLI", str(Path.home() / ".local/bin/grok"))
     app.config["PI_CLI"] = os.getenv("PI_CLI", str(Path.home() / ".local/bin/pi"))
-    app.config["PI_PARALLEL_AGENTS"] = min(4, max(1, int(os.getenv("PI_PARALLEL_AGENTS", "2"))))
+    app.config["CODEX_CLI"] = os.getenv("CODEX_CLI", str(Path.home() / ".local/bin/codex"))
     app.config["PI_WORKSPACE_ROOT"] = Path(os.getenv("PI_WORKSPACE_ROOT", str(PROJECT_ROOT / "pi")))
     app.config["OMNI_SKILL_PATH"] = os.getenv(
         "OMNI_SKILL_PATH",
@@ -137,7 +137,7 @@ def _solver_file(task: Path, solver_id: str, relative: str) -> tuple[Path, str]:
         abort(404)
     if solver_id == "grok":
         return task, relative
-    if not solver_id.startswith("pi-") or relative not in {
+    if not (solver_id.startswith("pi-") or solver_id == "codex") or relative not in {
         "log.txt",
         "prompt.txt",
         "solution.txt",
@@ -177,9 +177,10 @@ def create_task() -> tuple[Response, int]:  # noqa: PLR0915 -- One upload/save/l
     """Save a batch and start its own Grok and Pi solver processes."""
     cli = shutil.which(current_app.config["GROK_CLI"])
     pi_cli = shutil.which(current_app.config["PI_CLI"])
+    codex_cli = shutil.which(current_app.config["CODEX_CLI"])
     skill = Path(current_app.config["OMNI_SKILL_PATH"]).expanduser().resolve()
-    if not cli or not pi_cli or not skill.is_file():
-        return jsonify(error="Grok/Pi CLI 或 ctf-router 技能不可用，请检查本机配置。"), 503
+    if not cli or not pi_cli or not codex_cli or not skill.is_file():
+        return jsonify(error="Grok/Pi/Codex CLI 或 ctf-router 技能不可用，请检查本机配置。"), 503
     instructions = request.form.get("instructions", "")
     uploads = [upload for upload in request.files.getlist("files") if upload.filename]
     if not uploads and not instructions.strip():
@@ -193,8 +194,8 @@ def create_task() -> tuple[Response, int]:  # noqa: PLR0915 -- One upload/save/l
         (task / "uploads").mkdir(parents=True)
         (task / ".aperisolve").mkdir()
         workspace.mkdir(parents=True)
-        for index in range(1, current_app.config["PI_PARALLEL_AGENTS"] + 1):
-            (workspace / f"pi-{index}").mkdir()
+        for solver_id in ("pi-1", "codex"):
+            (workspace / solver_id).mkdir()
         names = []
         for upload in uploads:
             name = (upload.filename or "attachment").replace("\\", "/").rsplit("/", 1)[-1]
@@ -242,17 +243,21 @@ def create_task() -> tuple[Response, int]:  # noqa: PLR0915 -- One upload/save/l
             "exit_code": None,
             "grok_cli": cli,
             "pi_cli": pi_cli,
+            "codex_cli": codex_cli,
             "pi_workspace": str(workspace),
             "solvers": {
                 "grok": {"name": "Grok", "status": "preparing", "process": None},
-                **{
-                    f"pi-{index}": {
-                        "name": f"Pi {index}",
-                        "status": "preparing",
-                        "process": None,
-                        "workspace": str(workspace / f"pi-{index}"),
-                    }
-                    for index in range(1, current_app.config["PI_PARALLEL_AGENTS"] + 1)
+                "pi-1": {
+                    "name": "Pi",
+                    "status": "preparing",
+                    "process": None,
+                    "workspace": str(workspace / "pi-1"),
+                },
+                "codex": {
+                    "name": "Codex",
+                    "status": "preparing",
+                    "process": None,
+                    "workspace": str(workspace / "codex"),
                 },
             },
             "skill_path": str(skill),

@@ -164,7 +164,7 @@ def _update_overall(state: dict) -> None:
     state["ended_at"] = time.time()
 
 
-def _pi_event_text(line: str) -> str:  # noqa: PLR0911 -- Each event family has one small renderer.
+def _pi_event_text(line: str) -> str:  # noqa: C901, PLR0911 -- Each event family has one small renderer.
     """Show Pi text deltas and tool names without dumping tool arguments/results."""
     try:
         event = json.loads(line)
@@ -182,15 +182,39 @@ def _pi_event_text(line: str) -> str:  # noqa: PLR0911 -- Each event family has 
         return "\nPi 开始分析。\n"
     if event.get("type") == "agent_settled":
         return "\nPi 分析已结束。\n"
+    if event.get("type") == "message_end":
+        message = event.get("message", {})
+        if message.get("stopReason") == "error":
+            return f"\nPi 错误：{message.get('errorMessage', '未知错误')}\n"
     if event.get("type") == "error":
         return f"\nPi 错误：{event.get('message', event.get('error', '未知错误'))}\n"
     return ""
 
 
-def _run_pi(task: Path, solver_id: str) -> None:  # noqa: PLR0915 -- Worker owns a single process lifecycle.
+def _codex_event_text(line: str) -> str:
+    """Render Codex progress without exposing command arguments or tool output."""
+    try:
+        event = json.loads(line)
+    except ValueError:
+        return line
+    if not isinstance(event, dict):
+        return ""
+    kind = event.get("type")
+    item = event.get("item", {})
+    if kind == "item.completed" and item.get("type") in {"agent_message", "reasoning"}:
+        return str(item.get("text", "")) + "\n"
+    if kind == "item.started" and item.get("type") == "command_execution":
+        return "[Codex 正在执行命令]\n"
+    if kind in {"error", "turn.failed"}:
+        return f"Codex 错误：{event.get('message') or event.get('error')}\n"
+    return ""
+
+
+def _run_pi(task: Path, solver_id: str) -> None:  # noqa: C901, PLR0912, PLR0915 -- Worker owns a single process lifecycle.
     """Run one Pi solver with its own cwd, session store, log, and artifacts."""
     child = None
     identity = None
+    last_error = ""
     try:
         with locked(task):
             state = read_state(task)
@@ -198,18 +222,27 @@ def _run_pi(task: Path, solver_id: str) -> None:  # noqa: PLR0915 -- Worker owns
             if solver["status"] != "preparing":
                 return
             workspace = Path(solver["workspace"])
-            (workspace / "prompt.txt").write_text(
-                pi_prompt(
-                    task,
-                    workspace,
-                    state["uploads"],
-                    state["instructions"],
-                    int(solver_id.removeprefix("pi-")),
-                ),
-                encoding="utf-8",
-            )
-            child = subprocess.Popen(  # noqa: S603 -- Configured CLI and generated task paths.
+            is_codex = solver_id == "codex"
+            label = "Codex" if is_codex else "Pi"
+            prompt = pi_prompt(task, workspace, state["uploads"], state["instructions"], 1)
+            if is_codex:
+                prompt = prompt.replace("并行分支 Pi 1", "并行分支 Codex")
+                prompt = f"使用 ctf-router 技能：{state['skill_path']}，按技能说明执行。\n" + prompt
+            (workspace / "prompt.txt").write_text(prompt, encoding="utf-8")
+            command = (
                 [
+                    state["codex_cli"],
+                    "exec",
+                    "--json",
+                    "--skip-git-repo-check",
+                    "--sandbox",
+                    "workspace-write",
+                    "--cd",
+                    str(workspace),
+                    "-",
+                ]
+                if is_codex
+                else [
                     state["pi_cli"],
                     "--mode",
                     "json",
@@ -221,23 +254,50 @@ def _run_pi(task: Path, solver_id: str) -> None:  # noqa: PLR0915 -- Worker owns
                     state["skill_path"],
                     "--approve",
                     "@prompt.txt",
-                ],
-                cwd=workspace,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
+                ]
             )
+            prompt_input = (workspace / "prompt.txt").open("rb") if is_codex else subprocess.DEVNULL
+            try:
+                child = subprocess.Popen(  # noqa: S603 -- Configured CLI and generated task paths.
+                    command,
+                    cwd=workspace,
+                    stdin=prompt_input,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+            finally:
+                if is_codex:
+                    prompt_input.close()
             identity = process_identity(child.pid)
             solver.update(status="running", started_at=time.time(), process=identity)
             write_state(task, state)
         publish_event(task.name, "task_changed")
         log_path = workspace / "log.txt"
         with log_path.open("a", encoding="utf-8", buffering=1) as log:
-            log.write(f"Pi 启动，工作目录：{workspace}\n")
+            log.write(f"{label} 启动，工作目录：{workspace}\n")
             if child.stdout is not None:
                 for raw in child.stdout:
-                    text = _pi_event_text(raw.decode("utf-8", errors="replace"))
+                    line = raw.decode("utf-8", errors="replace")
+                    try:
+                        event = json.loads(line)
+                        if not is_codex and event.get("type") == "message_end":
+                            message = event.get("message", {})
+                            if message.get("role") == "assistant":
+                                last_error = (
+                                    message.get("errorMessage", "")
+                                    if message.get("stopReason") == "error"
+                                    else ""
+                                )
+                        if is_codex and event.get("type") == "turn.completed":
+                            last_error = ""
+                        if is_codex and event.get("type") in {"error", "turn.failed"}:
+                            last_error = str(
+                                event.get("message") or event.get("error") or "Codex 运行失败",
+                            )
+                    except (ValueError, AttributeError):
+                        pass
+                    text = _codex_event_text(line) if is_codex else _pi_event_text(line)
                     if text:
                         log.write(text)
                         log.flush()
@@ -249,12 +309,14 @@ def _run_pi(task: Path, solver_id: str) -> None:  # noqa: PLR0915 -- Worker owns
         has_flag = flag_path.is_file() and flag_path.stat().st_size > 0
         status = (
             "completed"
-            if exit_code == 0 and has_flag
+            if exit_code == 0 and not last_error and has_flag
             else "no_flag"
-            if exit_code == 0
+            if exit_code == 0 and not last_error
             else "failed"
         )
-        error = "" if exit_code == 0 else f"Pi CLI 退出码为 {exit_code}，请查看该分支日志。"
+        error = last_error or (
+            "" if exit_code == 0 else f"{label} CLI 退出码为 {exit_code}，请查看该分支日志。"
+        )
         with locked(task):
             state = read_state(task)
             solver = state["solvers"][solver_id]
@@ -360,7 +422,11 @@ def run(root: Path, task_id: str) -> None:
     """Run Grok alongside all Pi workers under one detachable supervisor."""
     task = task_path(root, task_id)
     state = read_state(task)
-    pi_ids = [solver_id for solver_id in state.get("solvers", {}) if solver_id.startswith("pi-")]
+    pi_ids = [
+        solver_id
+        for solver_id in state.get("solvers", {})
+        if solver_id.startswith("pi-") or solver_id == "codex"
+    ]
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(pi_ids))) as pool:
         futures = [pool.submit(_run_pi, task, solver_id) for solver_id in pi_ids]
         _run_grok(root, task_id)

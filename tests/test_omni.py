@@ -90,6 +90,22 @@ def omni_app(app: Flask, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Fla
         encoding="utf-8",
     )
     pi_cli.chmod(0o755)
+    codex_cli = tmp_path / "codex-test"
+    codex_cli.write_text(
+        "#!/usr/bin/python3\n"
+        "import json, pathlib, sys, time\n"
+        "prompt = sys.stdin.read()\n"
+        "p = pathlib.Path.cwd()\n"
+        "print(json.dumps({'type':'item.completed','item':"
+        "{'type':'agent_message','text':'Codex正在解题'}}), flush=True)\n"
+        "if 'hold' in prompt: time.sleep(90)\n"
+        "if 'slow' in prompt: time.sleep(2)\n"
+        "if 'fail' in prompt: sys.exit(7)\n"
+        "if 'none' not in prompt: (p / 'flag-re.txt').write_text('exp{codex_test}\\n')\n"
+        "(p / 'solution.txt').write_text('Codex 验证附件')\n",
+        encoding="utf-8",
+    )
+    codex_cli.chmod(0o755)
     monkeypatch.setenv("GROK_HOME", str(tmp_path / "grok-home"))
     skill = tmp_path / "SKILL.md"
     skill.write_text("test skill", encoding="utf-8")
@@ -97,7 +113,7 @@ def omni_app(app: Flask, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Fla
         OMNI_DATA_FOLDER=tmp_path / "data",
         GROK_CLI=str(cli),
         PI_CLI=str(pi_cli),
-        PI_PARALLEL_AGENTS=2,
+        CODEX_CLI=str(codex_cli),
         PI_WORKSPACE_ROOT=tmp_path / "pi",
         OMNI_SKILL_PATH=str(skill),
     )
@@ -348,7 +364,7 @@ def test_real_runner_output_and_exit_states(
     assert task["flag"] == ("exp{omni_test}" if status == "completed" else "")
     state = read_state(folder)
     pi_solvers = [
-        solver for solver_id, solver in state["solvers"].items() if solver_id.startswith("pi-")
+        solver for solver_id, solver in state["solvers"].items() if solver_id in {"pi-1", "codex"}
     ]
     assert len(pi_solvers) == 2
     assert len({solver["workspace"] for solver in pi_solvers}) == 2
@@ -363,6 +379,11 @@ def test_real_runner_output_and_exit_states(
     )
     assert pi_log.status_code == 200
     assert "Pi正在解题" in pi_log.json["text"]
+    codex_log = client.get(
+        f"/api/omni/tasks/{task_id}/text", query_string={"solver": "codex", "path": "log.txt"},
+    )
+    assert codex_log.status_code == 200
+    assert "Codex正在解题" in codex_log.json["text"]
 
 
 def test_parallel_tasks_and_new_app_keep_running(omni_app: Flask) -> None:
@@ -544,8 +565,11 @@ def test_runner_survives_submitter_exit(omni_app: Flask) -> None:
     assert wait_task(omni_app.test_client(), task_id)["status"] == "completed"
 
 
-def test_stopping_one_pi_branch_keeps_other_solvers_running(omni_app: Flask) -> None:
-    """A stop request affects only the Pi branch currently selected in the UI."""
+@pytest.mark.parametrize(("selected", "other"), [("pi-1", "codex"), ("codex", "pi-1")])
+def test_stopping_one_pi_branch_keeps_other_solvers_running(
+    omni_app: Flask, selected: str, other: str,
+) -> None:
+    """A stop request affects only the branch currently selected in the UI."""
     client = omni_app.test_client()
     task_id = post(client, "hold").json["task_id"]
     folder = omni_app.config["OMNI_DATA_FOLDER"] / task_id
@@ -556,18 +580,18 @@ def test_stopping_one_pi_branch_keeps_other_solvers_running(omni_app: Flask) -> 
             state = read_state(folder)
             if all(
                 state["solvers"][solver_id]["status"] == "running"
-                for solver_id in ("grok", "pi-1", "pi-2")
+                for solver_id in ("grok", "pi-1", "codex")
             ):
                 break
             time.sleep(0.05)
         state = read_state(folder)
-        second_pi = state["solvers"]["pi-2"]["process"]
+        second_pi = state["solvers"][other]["process"]
         grok = state["solvers"]["grok"]["process"]
-        response = client.post(f"/api/omni/tasks/{task_id}/stop/pi-1")
+        response = client.post(f"/api/omni/tasks/{task_id}/stop/{selected}")
         assert response.status_code == 200
         solvers = {solver["id"]: solver for solver in response.json["solvers"]}
-        assert solvers["pi-1"]["status"] == "stopped"
-        assert solvers["pi-2"]["status"] == "running"
+        assert solvers[selected]["status"] == "stopped"
+        assert solvers[other]["status"] == "running"
         assert solvers["grok"]["status"] == "running"
         assert response.json["status"] == "running"
         assert process_alive(second_pi)
@@ -721,3 +745,23 @@ def test_records_paginate_and_home_has_no_detail_navigation(
     assert "stop/${encodeURIComponent(row.selectedSolver)}" in script
     assert "任务记录" in home
     assert client.get(f"/omni/tasks/{ids[0]}").status_code == 404
+
+
+def test_pi_model_error_is_reported_even_when_cli_exits_zero(omni_app: Flask) -> None:
+    """A failed model request cannot be mistaken for a successful no-flag run."""
+    pi_cli = Path(omni_app.config["PI_CLI"])
+    pi_cli.write_text(
+        "#!/usr/bin/python3\nimport json\n"
+        "print(json.dumps({'type':'message_end','message':{'role':'assistant',"
+        "'stopReason':'error','errorMessage':'Request timed out.'}}))\n",
+    )
+    client = omni_app.test_client()
+    task_id = post(client).json["task_id"]
+    task = wait_task(client, task_id)
+    solver = next(s for s in task["solvers"] if s["id"] == "pi-1")
+    assert solver["status"] == "failed"
+    assert "Request timed out" in solver["error"]
+    result = client.get(
+        f"/api/omni/tasks/{task_id}/text", query_string={"solver": "pi-1", "path": "log.txt"},
+    )
+    assert "Request timed out" in result.json["text"]

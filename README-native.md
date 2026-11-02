@@ -42,23 +42,23 @@ sudo systemctl disable aperisolve.service aperisolve-worker.service  # 取消项
 停止网页服务不会停止已启动的深度分析任务；可在网页任务记录中单独停止它们。
 systemd 模式的日志由 journal 管理；`logs/` 中的日志对应手动启动模式。
 
-## 深度分析（Grok + Pi CLI 并行）
+## 深度分析（Grok + Pi + Codex CLI 并行）
 
 首页勾选“深度分析”，可一次上传多个任意类型文件，并填写解题说明，例如
 `flag 的格式为 exp{XXXX}`。提交后留在首页，点击左上角“任务记录”打开弹窗，
-查看各任务进度、展开运行日志、切换 Grok 与 Pi 并行分支、预览 TXT、下载文件或停止当前观察的分支。
+查看各任务进度、展开运行日志、切换 Grok、Pi 与 Codex 并行分支、预览 TXT、下载文件或停止当前观察的分支。
 
 每次提交创建独立的 `data/<任务UUID>/`，附件保存在 `uploads/` 中，用户说明保存在
-`instructions.txt`，完整提示词保存在 `prompt.txt`。后台监督进程同时启动 Grok 和两个独立 Pi CLI 分支。
-Pi 使用 JSONL 事件流显示实时进度，每个 Pi 分支有单独的工作目录、会话和产物，不会互相覆盖：
+`instructions.txt`，完整提示词保存在 `prompt.txt`。后台监督进程同时启动 Grok、一个 Pi CLI 分支和一个 Codex CLI 分支。
+Pi 使用 JSONL 事件流显示实时进度，Pi 和 Codex 分支有单独的工作目录和产物，不会互相覆盖：
 
 ```text
 /home/kali/Desktop/ctf-tool/AperiSolve/pi/<任务UUID>/pi-1/
-/home/kali/Desktop/ctf-tool/AperiSolve/pi/<任务UUID>/pi-2/
+/home/kali/Desktop/ctf-tool/AperiSolve/pi/<任务UUID>/codex/
 ```
 
-每个目录保存该分支的提示词、Pi 会话、日志和解题产物。题目附件仍保存在 `data/<任务UUID>/uploads/`，
-Pi 分支只读取附件并在自己的工作目录写入临时文件、`flag-re.txt` 和 `solution.txt`。
+每个目录保存该分支的提示词、日志和解题产物；Pi 还保存会话。题目附件仍保存在 `data/<任务UUID>/uploads/`，
+Pi 和 Codex 分支读取附件并在自己的工作目录写入临时文件、`flag-re.txt` 和 `solution.txt`。
 `pi/` 是运行时数据目录，已加入 Git 忽略规则。Grok 分支继续调用：
 
 ```bash
@@ -75,12 +75,12 @@ grok --cwd /absolute/path/to/data/<task-id> \
 Grok resume 会保留原会话目录，因此每题仍独立保存文件，提示词使用新题的绝对路径。
 会话标识及来源记录在 `.aperisolve/task.json`，旧记录可从日志中的会话标识直接复用。
 
-Grok 的 flag 写入任务根目录 `flag-re.txt`，每行一个，解题说明另存 `solution.txt`。Pi 的 flag 和
-解题说明分别保存在 Pi 分支工作目录。`grok.log.txt` 和各 Pi 工作目录下的 `log.txt` 保存实时日志，
+Grok 的 flag 写入任务根目录 `flag-re.txt`，每行一个，解题说明另存 `solution.txt`。Pi 和 Codex 的 flag 和
+解题说明分别保存在 各自分支工作目录。`grok.log.txt` 和各分支工作目录下的 `log.txt` 保存实时日志，
 `.aperisolve/` 保存内部状态。只有 CLI 正常退出且结果文件非空才显示“已找到 flag”；
 CLI 正常退出但没有结果文件显示“未找到 flag”。
 
-任务记录提供 Grok 与 Pi 分支切换按钮。停止按钮只停止当前观察的分支及其工具子进程，
+任务记录提供 Grok、Pi 与 Codex 分支切换按钮。停止按钮只停止当前观察的分支及其工具子进程，
 同一题的其他解题分支继续运行。
 
 深度分析不经过原分析器或 RQ，不限制上传字节数、执行时长和同时运行的任务数。
@@ -96,7 +96,7 @@ CLI 正常退出但没有结果文件显示“未找到 flag”。
 | `OMNI_DATA_FOLDER` | 项目根目录下的 `data/` |
 | `GROK_CLI` | `~/.local/bin/grok` |
 | `PI_CLI` | `~/.local/bin/pi` |
-| `PI_PARALLEL_AGENTS` | `2`（Pi 并行分支数，范围 1–4） |
+| `CODEX_CLI` | `~/.local/bin/codex` |
 | `PI_WORKSPACE_ROOT` | 项目目录下的 `pi/` |
 | `OMNI_SKILL_PATH` | `~/.grok/skills/ctf-router/SKILL.md` |
 | `OMNI_SESSION_MAX_AGE` | `3600`（可复用会话的空闲秒数，`0` 表示每题新建） |
