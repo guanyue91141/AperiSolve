@@ -43,9 +43,9 @@ directly on the host's public address.
 `aperisolve.fr` and both `www.` names from one block, proxying to
 `127.0.0.1:5000`. Two details there are load-bearing:
 
-- **`client_max_body_size` must stay above `MAX_CONTENT_LENGTH`.** nginx's 1 MiB
-  default would reject valid uploads with its own 413 before the app ever sees
-  them.
+- **Set `client_max_body_size 0;` to allow uploads of any size through nginx.**
+  The application has no request-size cap; nginx's default 1 MiB limit would
+  otherwise reject larger uploads before the app receives them.
 - **`X-Forwarded-For` is passed through, not appended to.** `get_client_ip()`
   reads the *rightmost* hop, so the usual `$proxy_add_x_forwarded_for` would make
   that hop the Cloudflare edge IP and put every visitor in a single rate-limit
@@ -56,11 +56,10 @@ TLS terminates at Cloudflare; the origin speaks plain HTTP on :80.
 
 ## Configuration
 
-All runtime configuration is environment-driven; `.env.example` documents
-every variable. Deploy-time values come from GitHub Actions variables and
-secrets — to change a production setting (e.g. `MAX_CONTENT_LENGTH`,
-`SITE_BASE_URL`), edit the repository's Actions
-configuration and re-deploy with a tag.
+Runtime configuration is environment-driven; `.env.example` documents the
+supported variables. Deploy-time values come from GitHub Actions variables and
+secrets — edit the repository's Actions configuration and re-deploy with a tag
+to change a production setting such as `SITE_BASE_URL`.
 
 ## Deployment-local site content
 

@@ -82,6 +82,7 @@ def js_catalog() -> dict[str, str]:
         "Network error occurred": _("Network error occurred"),
         "Error:": _("Error:"),
         "Download file": _("Download file"),
+        "Files in archive": _("Files in archive"),
         "Superimposed": _("Superimposed"),
         "Red": _("Red"),
         "Green": _("Green"),

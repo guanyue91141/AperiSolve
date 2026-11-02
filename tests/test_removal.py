@@ -8,12 +8,11 @@ from flask import Flask
 from flask.testing import FlaskClient
 
 from aperisolve import app as app_module
-from aperisolve.config import REMOVAL_MIN_AGE_SECONDS
 from aperisolve.models import Image, Submission, UploadLog, db
 
 IMG_HASH = "1" * 32
 SUB_HASH = "2" * 32
-OLD_ENOUGH = REMOVAL_MIN_AGE_SECONDS + 60
+OLD_ENOUGH = 3600
 
 
 @pytest.fixture
@@ -61,31 +60,52 @@ def _seed(
 
 
 @pytest.mark.usefixtures("storage")
-def test_remove_young_submission_is_forbidden(
+def test_remove_young_submission_is_allowed(
     app: Flask,
     client: FlaskClient,
     tmp_path: Path,
 ) -> None:
-    """Submissions younger than the minimum age cannot be removed."""
+    """Submissions can be removed immediately after upload."""
     _seed(app, tmp_path, age_seconds=0, ips=["203.0.113.1"])
     response = client.post(f"/remove/{SUB_HASH}")
-    assert response.status_code == 403
-    assert "seconds old" in response.get_json()["error"]
+    assert response.status_code == 200
+    with app.app_context():
+        assert db.session.get(Submission, SUB_HASH) is None
+        assert db.session.get(Image, IMG_HASH) is None
 
 
 @pytest.mark.usefixtures("storage")
-def test_remove_with_multiple_uploader_ips_is_forbidden(
+def test_remove_with_multiple_uploader_ips_is_allowed(
     app: Flask,
     client: FlaskClient,
-    tmp_path: Path,
+    storage: Path,
 ) -> None:
-    """Images uploaded from several IPs cannot be removed by one of them."""
-    _seed(app, tmp_path, age_seconds=OLD_ENOUGH, ips=["203.0.113.1", "203.0.113.2"])
+    """Images uploaded from several IPs can still be removed."""
+    img_file = _seed(
+        app,
+        storage,
+        age_seconds=OLD_ENOUGH,
+        ips=["203.0.113.1", "203.0.113.2"],
+    )
+    with app.app_context():
+        db.session.add(
+            Submission(
+                hash="3" * 32,
+                filename="another-name.png",
+                status="completed",
+                date=time.time() - OLD_ENOUGH,
+                image_hash=IMG_HASH,
+            ),
+        )
+        db.session.commit()
     response = client.post(f"/remove/{SUB_HASH}")
-    assert response.status_code == 403
-    body = response.get_json()
-    assert "IP" in body["error"]
-    assert body["ip_count"] == 2
+    assert response.status_code == 200
+    with app.app_context():
+        assert db.session.get(Submission, SUB_HASH) is None
+        assert db.session.get(Submission, "3" * 32) is not None
+        assert db.session.get(Image, IMG_HASH) is not None
+    assert img_file.exists()
+    assert len(list((storage / "removed").iterdir())) == 1
 
 
 def test_remove_deletes_rows_and_archives_original(

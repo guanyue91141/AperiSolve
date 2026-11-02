@@ -20,6 +20,7 @@ from werkzeug.test import TestResponse
 from aperisolve import omni
 from aperisolve.app import create_app
 from aperisolve.models import Image, Submission
+from aperisolve.omni_prompts import problem_prompt
 from aperisolve.omni_runner import format_event
 from aperisolve.omni_store import (
     PREVIEW_BYTES,
@@ -51,6 +52,9 @@ def omni_app(app: Flask, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Fla
         "text = (p / 'instructions.txt').read_text()\n"
         "(p / 'invocation.txt').write_text(json.dumps({'cwd': str(p), 'args': sys.argv[1:]}))\n"
         "print(json.dumps({'update': {'content': {'text': '正在解题\\n'}}}), flush=True)\n"
+        "print(json.dumps({'type': 'tool_call', 'rawInput': 'tool-input-marker'}), flush=True)\n"
+        "print(json.dumps({'type': 'tool_call_update', 'rawOutput': 'tool-output-marker', "
+        "'content': {'text': 'tool-content-marker'}}), flush=True)\n"
         "if 'hold' in text:\n"
         "    signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
         "    child = subprocess.Popen([sys.executable, '-c', "
@@ -131,6 +135,38 @@ def test_real_grok_streaming_text_is_readable() -> None:
     assert format_event('{"type":"text","data":"正在解题"}\n') == "正在解题"
     assert format_event('{"type":"thought","data":"检查附件"}\n') == "检查附件"
     assert format_event("connection failed\n") == "connection failed\n"
+
+
+@pytest.mark.parametrize("kind", ["tool_call", "tool_call_update"])
+@pytest.mark.parametrize("wrapper", ["native", "update", "params"])
+def test_tool_events_are_omitted_from_logs(kind: str, wrapper: str) -> None:
+    """Filter tool inputs/results before any text extraction, including ACP wrappers."""
+    event = {
+        "rawInput": {"command": "tool-input-marker"},
+        "rawOutput": "tool-output-marker" * 1024,
+        "content": {"text": "tool-content-marker"},
+        "text": "tool-text-marker",
+    }
+    if wrapper == "native":
+        event["type"] = kind
+    else:
+        event["sessionUpdate"] = kind
+        event = {"update": event}
+        if wrapper == "params":
+            event = {"method": "session/update", "params": event}
+    assert format_event(json.dumps(event) + "\n") == ""
+
+
+def test_non_tool_events_are_preserved_in_logs() -> None:
+    """Keep agent text/thoughts, failures and terminal session metadata visible."""
+    assert format_event('{"update":{"content":{"text":"answer"}}}\n') == "answer"
+    for event in (
+        {"type": "error", "message": "connection failed"},
+        {"type": "end", "sessionId": "test-session"},
+        {"type": "usage", "usage": {"input_tokens": 42}},
+    ):
+        line = json.dumps(event) + "\n"
+        assert format_event(line) == line
 
 
 def test_multifile_names_prompt_and_original_pipeline_isolation(
@@ -265,7 +301,18 @@ def test_real_runner_output_and_exit_states(
     assert "--no-plan" in args
     assert "--max-turns" not in args
     assert "--timeout" not in args
-    assert "正在解题" in (folder / "grok.log.txt").read_text()
+    log = (folder / "grok.log.txt").read_text()
+    assert "正在解题" in log
+    assert "tool_call" not in log
+    assert "tool-input-marker" not in log
+    assert "tool-output-marker" not in log
+    assert "tool-content-marker" not in log
+    preview = client.get(f"/api/omni/tasks/{task_id}/text?path=grok.log.txt&tail=1")
+    assert preview.status_code == 200
+    assert preview.json["text"] == log
+    download = client.get(f"/api/omni/tasks/{task_id}/download?path=grok.log.txt")
+    assert download.status_code == 200
+    assert download.data.decode() == log
     assert task["flag"] == ("exp{omni_test}" if status == "completed" else "")
 
 
@@ -307,14 +354,18 @@ def test_resume_latest_idle_session_with_absolute_new_problem_paths(omni_app: Fl
     prompt = (current / "prompt.txt").read_text()
     assert prompt.startswith("这是全新题目")
     assert "复用当前会话中已加载的 skills" in prompt
-    assert "旧题的答案、附件和结论均不适用于本题。" in prompt  # noqa: RUF001 -- User-facing Chinese text.
+    assert "旧题的答案、附件和结论均不适用于本题。" in prompt
     for path in ("uploads/题目.bin", "flag-re.txt", "solution.txt"):
         assert str(current / path) in prompt
     assert "这是 Web 源码题 none" in prompt
     assert "必须先读取" not in prompt
-    assert "SKILL.md" not in prompt
+    assert "仅补读技能入口" in prompt
     assert "当本题需要尚未加载的技能时" in prompt
     assert "PCAP 流量题" not in prompt
+    assert prompt.endswith(problem_prompt(current, state["uploads"], state["instructions"]))
+    assert old_prompt.endswith(
+        problem_prompt(original, session["uploads"], session["instructions"]),
+    )
     assert result["status"] == "no_flag"
     assert not (current / "flag-re.txt").exists()
     assert (original / "flag-re.txt").read_text() == old_flag
@@ -378,7 +429,7 @@ def test_unavailable_sessions_start_a_fresh_conversation(
     prompt = (current / "prompt.txt").read_text()
     assert "使用 ctf-router 技能" in prompt
     assert "references/catalog.md" in prompt
-    assert "选择 1–3 个相关技能" in prompt
+    assert "选择 1-3 个相关技能" in prompt
 
 
 def test_parallel_resumes_exclusively_lease_sessions_and_stop_releases_them(
@@ -533,7 +584,7 @@ def test_records_paginate_and_home_has_no_detail_navigation(
     omni_app: Flask,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Keep records paginated inside the homepage dialog."""
+    """Keep records paginated inside the homepage sidebar."""
     fake_launch(monkeypatch)
     client = omni_app.test_client()
     ids = [post(client).json["task_id"] for _ in range(21)]

@@ -1,0 +1,21 @@
+[Unit]
+Description=AperiSolve web application
+Wants=network-online.target redis-server.service aperisolve-worker.service
+After=network-online.target redis-server.service
+
+[Service]
+Type=simple
+User=kali
+Group=kali
+WorkingDirectory=/home/kali/Desktop/ctf-tool/AperiSolve
+Environment=HOME=/home/kali
+Environment=PATH=/home/kali/.local/bin:/home/kali/.grok/bin:/home/kali/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/bin/bash /home/kali/Desktop/ctf-tool/AperiSolve/scripts/run-service.sh web
+Restart=always
+RestartSec=5
+# Omni runners use separate sessions and must survive a web service restart.
+KillMode=process
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

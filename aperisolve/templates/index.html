@@ -22,7 +22,7 @@
 </script>
 {% endblock %}
 {% block header_actions %}
-<button type="button" class="btn btn-outline-primary omni-history-button" id="omni-history-open" aria-haspopup="dialog" aria-controls="omni-history">
+<button type="button" class="btn btn-outline-primary omni-history-button" id="omni-history-open" aria-expanded="false" aria-controls="omni-history">
   <i class="fa-solid fa-list-check me-2" aria-hidden="true"></i>更多
 </button>
 {% endblock %}
@@ -87,20 +87,24 @@
   <div id="result-analyzers" class="mb-4" aria-live="polite"></div>
   <div id="result-removal" class="mb-4"></div>
 </section>
+{% endblock %}
 
-<dialog id="omni-history" class="omni-history" aria-labelledby="omni-history-title">
+{% block site_sidebar %}
+<aside id="omni-history" class="omni-history" aria-labelledby="omni-history-title" hidden>
   <div class="omni-history-header">
     <h2 id="omni-history-title">任务记录</h2>
     <button type="button" class="btn btn-outline-light" id="omni-history-close" aria-label="关闭任务记录">关闭</button>
   </div>
-  <p id="omni-history-message" role="status" aria-live="polite"></p>
-  <div id="omni-task-list"></div>
+  <div class="omni-history-content">
+    <p id="omni-history-message" role="status" aria-live="polite"></p>
+    <div id="omni-task-list"></div>
+  </div>
   <div class="omni-pagination">
     <button type="button" class="btn btn-outline-light" id="omni-prev">上一页</button>
     <span id="omni-page"></span>
     <button type="button" class="btn btn-outline-light" id="omni-next">下一页</button>
   </div>
-</dialog>
+</aside>
 {% endblock %}
 {% block footer_content %}
 <link href="/static/css/omni.css?v={{ config['PROJECT_VERSION'] }}-omni-sidebar-20261030-3" rel="stylesheet">

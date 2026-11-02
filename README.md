@@ -108,9 +108,9 @@ The stack runs as Docker Compose services:
 - **rqdashboard** — queue monitoring, bound to localhost:9181.
 
 This separation keeps heavy tools (binwalk, foremost, zsteg, etc.) isolated
-and avoids blocking the web worker. Identical submissions are deduplicated by
-a content hash, and derived images are cached with long-lived immutable HTTP
-headers, so repeat traffic is cheap.
+and avoids blocking the web worker. Original uploads are stored by content hash,
+while each upload creates a new submission and analysis job. Derived images
+are cached with long-lived immutable HTTP headers, so repeat traffic is cheap.
 
 ## Documentation
 

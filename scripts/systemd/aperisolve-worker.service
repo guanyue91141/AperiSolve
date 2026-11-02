@@ -1,0 +1,21 @@
+[Unit]
+Description=AperiSolve RQ analysis worker
+Wants=network-online.target redis-server.service
+After=network-online.target redis-server.service
+
+[Service]
+Type=simple
+User=kali
+Group=kali
+WorkingDirectory=/home/kali/Desktop/ctf-tool/AperiSolve
+Environment=HOME=/home/kali
+Environment=PATH=/home/kali/.local/bin:/home/kali/.grok/bin:/home/kali/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/bin/bash /home/kali/Desktop/ctf-tool/AperiSolve/scripts/run-service.sh worker
+Restart=always
+RestartSec=5
+# Give RQ time to finish its current job after the initial SIGTERM.
+KillMode=mixed
+TimeoutStopSec=300
+
+[Install]
+WantedBy=multi-user.target

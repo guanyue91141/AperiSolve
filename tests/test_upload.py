@@ -1,4 +1,4 @@
-"""Tests for the upload happy path, deduplication and validation errors."""
+"""Tests for the upload pipeline and validation errors."""
 
 import io
 from pathlib import Path
@@ -115,22 +115,27 @@ def test_upload_skips_cleanup_enqueue_when_lock_held(
     assert all(c[0] != ("aperisolve.tasks.cleanup_sweep_job",) for c in enqueue_calls)
 
 
-def test_duplicate_upload_returns_same_hash_without_second_enqueue(
+def test_duplicate_upload_gets_new_submission_and_is_analyzed_again(
     app: Flask,
     client: FlaskClient,
     enqueue_calls: list[EnqueueCall],
 ) -> None:
-    """An identical re-upload is deduplicated but still logged."""
+    """An identical re-upload gets a fresh submission and another analysis job."""
     png = _png_bytes()
     first = _post_image(client, png, "tiny.png")
     second = _post_image(client, png, "tiny.png")
 
     assert first.status_code == 200
     assert second.status_code == 200
-    assert second.get_json()["submission_hash"] == first.get_json()["submission_hash"]
-    assert len(enqueue_calls) == 1
+    first_hash = first.get_json()["submission_hash"]
+    second_hash = second.get_json()["submission_hash"]
+    assert second_hash != first_hash
+    assert len(enqueue_calls) == 2
+    assert enqueue_calls[0][0] == ("aperisolve.workers.analyze_image", first_hash)
+    assert enqueue_calls[1][0] == ("aperisolve.workers.analyze_image", second_hash)
     with app.app_context():
         assert UploadLog.query.count() == 2
+        assert Submission.query.count() == 2
 
 
 def test_upload_without_extension_is_rejected(

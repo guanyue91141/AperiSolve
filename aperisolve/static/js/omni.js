@@ -12,13 +12,15 @@
   const initialSubmit = submit.innerHTML;
   const initialBrowse = browse.innerHTML;
   const message = document.getElementById("omni-upload-message");
-  const dialog = document.getElementById("omni-history");
+  const sidebar = document.getElementById("omni-history");
+  const historyToggle = document.getElementById("omni-history-open");
+  const historyClose = document.getElementById("omni-history-close");
   const list = document.getElementById("omni-task-list");
   const historyMessage = document.getElementById("omni-history-message");
   const previous = document.getElementById("omni-prev");
   const next = document.getElementById("omni-next");
   const statuses = {preparing: "准备中", running: "运行中", stopping: "停止中",
-    completed: "已找到 flag", no_flag: "未找到 flag", failed: "失败", stopped: "已停止"};
+    completed: "已完成", no_flag: "未找到 flag", failed: "失败", stopped: "已停止"};
   const active = new Set(["preparing", "running", "stopping"]);
   let uploading = false;
   let page = 1;
@@ -99,7 +101,7 @@
           notify(`任务已创建（${result.task_id.slice(0, 8)}），请点击左上角“更多”查看进度。`);
           input.value = "";
           syncMode();
-          if (dialog.open) loadTask(result.task_id, true);
+          if (!sidebar.hidden) loadTask(result.task_id, true);
         } else {
           notify(result.error || `创建任务失败（${xhr.status}），请重试。`, true);
           progress.classList.add("d-none");
@@ -129,9 +131,9 @@
     // Only static markup goes through innerHTML; user content uses textContent.
     node.innerHTML = `<div class="omni-task-header"><div class="omni-task-heading"><span class="omni-task-title"></span><span class="omni-task-status"></span></div>
       <button type="button" class="btn btn-sm btn-outline-light omni-expand" aria-expanded="false">展开</button></div>
-      <span class="omni-task-meta"></span><span class="omni-task-hint"></span>
+      <span class="omni-task-meta"></span>
       <span class="omni-task-flag-group"><code class="omni-task-flag"></code></span>
-      <div class="omni-task-body" hidden><strong>解题说明</strong><pre class="omni-instructions"></pre>
+      <div class="omni-task-body" hidden>
       <p class="omni-task-error" role="status"></p><div class="omni-task-actions">
       <button type="button" class="btn btn-outline-danger omni-stop">停止任务</button>
       <div class="omni-preview-buttons" role="group" aria-label="任务文本">
@@ -185,9 +187,7 @@
     setText(status, statuses[task.status] || task.status);
     status.dataset.status = task.status;
     setText(row.node.querySelector(".omni-task-meta"), `${task.id.slice(0, 8)} · ${new Date(task.created_at * 1000).toLocaleString()} · ${duration(task)}`);
-    setText(row.node.querySelector(".omni-task-hint"), task.instructions.slice(0, 150) || "未填写解题说明");
     setText(row.node.querySelector(".omni-task-flag"), task.flag || "");
-    setText(row.node.querySelector(".omni-instructions"), task.instructions || "（无）");
     setText(row.node.querySelector(".omni-task-error"), task.error || "");
     row.stop.hidden = !active.has(task.status);
   }
@@ -198,13 +198,13 @@
     row.output.textContent = "正在读取…";
     try {
       const data = await json(fileUrl(row.task.id, "text", path, path === "grok.log.txt"));
-      if (version !== row.previewVersion || !dialog.open || !row.expanded) return;
+      if (version !== row.previewVersion || sidebar.hidden || !row.expanded) return;
       const atEnd = row.output.scrollTop + row.output.clientHeight >= row.output.scrollHeight - 30;
       row.output.textContent = data.text || (path === "flag-re.txt" ? "（空）" : "（内容为空，运行中任务会自动更新）");
       row.note.textContent = data.truncated ? "内容超过 256 KiB，仅预览" + (data.tail ? "末尾" : "开头") + "部分。" : "";
       if (atEnd && path === "grok.log.txt") row.output.scrollTop = row.output.scrollHeight;
     } catch (error) {
-      if (version !== row.previewVersion || !dialog.open || !row.expanded) return;
+      if (version !== row.previewVersion || sidebar.hidden || !row.expanded) return;
       if (path === "flag-re.txt" && error.message.includes("404")) {
         row.output.textContent = "（空）";
         row.note.textContent = "";
@@ -222,7 +222,7 @@
     row.loading = true;
     try {
       const task = await json(api(row.task.id));
-      if (!dialog.open || !row.expanded) return;
+      if (sidebar.hidden || !row.expanded) return;
       updateRow(row, task);
       await loadPreview(row);
     } catch (error) {
@@ -235,11 +235,11 @@
     setText(document.getElementById("omni-page"), `第 ${page} / ${Math.max(1, Math.ceil(taskTotal / pageSize))} 页`);
   }
   async function loadTask(taskId, insertIfNew = false) {
-    if (!dialog.open) return;
+    if (sidebar.hidden) return;
     const current = generation;
     try {
       const task = await json(api(taskId));
-      if (!dialog.open || current !== generation) return;
+      if (sidebar.hidden || current !== generation) return;
       let row = rows.get(taskId);
       if (!row && insertIfNew && page === 1) {
         row = createRow(task);
@@ -275,7 +275,7 @@
     }
   }
   function connectSocket() {
-    if (!dialog.open || socket) return;
+    if (sidebar.hidden || socket) return;
     const url = new URL("/api/omni/tasks/ws", window.location.href);
     url.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const connection = new WebSocket(url);
@@ -284,7 +284,7 @@
     connection.addEventListener("close", () => {
       if (socket !== connection) return;
       socket = null;
-      if (!dialog.open) return;
+      if (sidebar.hidden) return;
       socketRetry = setTimeout(() => {
         socketRetry = null;
         connectSocket();
@@ -300,12 +300,12 @@
     if (connection && connection.readyState < WebSocket.CLOSING) connection.close();
   }
   async function refresh() {
-    if (!dialog.open || refreshing) return;
+    if (sidebar.hidden || refreshing) return;
     refreshing = true;
     const current = generation;
     try {
       const result = await json(`${api()}?page=${page}`);
-      if (!dialog.open || current !== generation) return;
+      if (sidebar.hidden || current !== generation) return;
       taskTotal = result.total;
       setText(historyMessage, result.total ? "" : "暂无深度分析任务，请在首页勾选“深度分析”后提交。");
       const ids = new Set(result.tasks.map((task) => task.id));
@@ -323,14 +323,30 @@
     } catch (error) { setText(historyMessage, `加载失败：${error.message}`); }
     finally { refreshing = false; }
   }
-  document.getElementById("omni-history-open").addEventListener("click", () => {
-    if (!dialog.open) dialog.showModal();
+  function setHistoryOpen(open) {
+    if (open === !sidebar.hidden) return;
+    const restoreFocus = sidebar.contains(document.activeElement);
+    sidebar.hidden = !open;
+    historyToggle.setAttribute("aria-expanded", String(open));
+    document.body.classList.toggle("omni-history-visible", open);
     generation++;
-    connectSocket();
-    refresh();
+    if (open) {
+      historyClose.focus({preventScroll: true});
+      connectSocket();
+      refresh();
+    } else {
+      closeSocket();
+      if (restoreFocus) historyToggle.focus({preventScroll: true});
+    }
+  }
+  historyToggle.addEventListener("click", () => setHistoryOpen(sidebar.hidden));
+  historyClose.addEventListener("click", () => setHistoryOpen(false));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !sidebar.hidden && !event.defaultPrevented) {
+      event.preventDefault();
+      setHistoryOpen(false);
+    }
   });
-  document.getElementById("omni-history-close").addEventListener("click", () => dialog.close());
-  dialog.addEventListener("close", () => { generation++; closeSocket(); });
   previous.addEventListener("click", () => { page--; generation++; refresh(); });
   next.addEventListener("click", () => { page++; generation++; refresh(); });
 })();

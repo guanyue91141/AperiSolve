@@ -131,6 +131,10 @@ msgstr "错误："
 msgid "Download file"
 msgstr "下载文件"
 
+#: aperisolve/i18n.py
+msgid "Files in archive"
+msgstr "压缩包内容"
+
 #: aperisolve/i18n.py:85
 msgid "Superimposed"
 msgstr "叠加"

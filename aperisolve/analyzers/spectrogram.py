@@ -13,8 +13,8 @@ carries a time (s) X axis and a normalised amplitude Y axis with a zero
 baseline. All axis text is rasterised into the PNG, so nothing here needs
 translating.
 
-Like the other NumPy analyzers there is no wall-clock guard, so run time is
-bounded solely by the ``MAX_CONTENT_LENGTH`` upload cap (1 MB by default).
+Like the other NumPy analyzers there is no wall-clock guard, so processing time
+depends on the size and duration of the uploaded audio.
 """
 
 import math

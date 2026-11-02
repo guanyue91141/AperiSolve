@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import BinaryIO
 from urllib.parse import quote
 
+from .omni_prompts import problem_prompt
 from .omni_store import ACTIVE, process_alive, read_state, task_path
 
 DEFAULT_SESSION_MAX_AGE = 3600
@@ -138,15 +139,12 @@ def claim_session(root: Path, task: Path, cli: str, max_age: float) -> SessionLe
 
 
 def resume_prompt(task: Path, state: dict) -> str:
-    """Append only the new problem and absolute input/output locations."""
-    attachments = "\n".join(f"- {task / item['path']}" for item in state["uploads"]) or "（无附件）"
-    instructions = state["instructions"]
-    instruction_section = f"用户解题说明：\n{instructions}\n" if instructions.strip() else ""
+    """Reuse loaded skills while repeating the current task's short solve contract."""
+    skill = state.get("skill_path")
+    fallback = f"若路由规则已丢失或尚未加载，仅补读技能入口：{skill}\n" if skill else ""
     return (
         "这是全新题目；复用当前会话中已加载的 skills。旧题的答案、附件和结论均不适用于本题。\n"
         "当本题需要尚未加载的技能时，再按已加载的 ctf-router 规则选择技能。\n"
-        f"新题目录（绝对路径）：{task}\n"
-        f"新题附件（绝对路径）：\n{attachments}\n"
-        f"flag 输出（绝对路径）：{task / 'flag-re.txt'}\n"
-        f"解题过程输出（绝对路径）：{task / 'solution.txt'}\n" + instruction_section
+        + fallback
+        + problem_prompt(task, state["uploads"], state["instructions"])
     )

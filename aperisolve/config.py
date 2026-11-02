@@ -42,7 +42,6 @@ JOB_TIMEOUT = MAX_PENDING_TIME + 60
 STALE_SUBMISSION_CUTOFF = JOB_TIMEOUT + 60
 CLEANUP_INTERVAL_SECONDS = _int_env("CLEANUP_INTERVAL_SECONDS", 900)  # 15 minutes
 MAX_STORE_TIME = _int_env("MAX_STORE_TIME", 259200)  # 3 days by default
-MAX_CONTENT_LENGTH = _int_env("MAX_CONTENT_LENGTH", 1048576)  # 1 MB by default
 CLEAR_AT_RESTART = _int_env("CLEAR_AT_RESTART", 0)
 
 # Recognised image file extensions. No longer the upload gate (any file type is

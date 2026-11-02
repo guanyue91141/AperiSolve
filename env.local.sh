@@ -4,8 +4,6 @@
 # Differences from the upstream Docker Compose setup:
 #   * SQLite replaces the postgres service.
 #   * A localhost redis replaces the redis service.
-#   * MAX_CONTENT_LENGTH is raised: upstream defaults to 1 MB, which rejects
-#     anything larger with HTTP 413 before any analyzer runs.
 #   * PATH gains the user gem bin dir, otherwise the RQ worker cannot find zsteg.
 
 # Resolve the project root from this file's location so the setup stays portable.
@@ -15,9 +13,6 @@ export PERISOLVE_DIR
 export DB_URI="sqlite:///${PERISOLVE_DIR}/aperisolve.db"
 export REDIS_URL="redis://127.0.0.1:6379/0"
 export RATELIMIT_STORAGE_URI="redis://127.0.0.1:6379/1"
-
-# 1 MB -> 16 MB. CTF images are routinely larger than the upstream cap.
-export MAX_CONTENT_LENGTH=16777216
 
 export FLASK_HOST="${FLASK_HOST:-0.0.0.0}"
 export FLASK_PORT=5000

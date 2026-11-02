@@ -14,6 +14,34 @@ running natively on this machine. Four local modifications are applied
 
 Logs land in `logs/`. Env vars are in `env.local.sh` (`source` it if running by hand).
 
+## 开机自启（本机 systemd）
+
+本机使用 `aperisolve.service`、`aperisolve-worker.service` 和系统的
+`redis-server.service`，无需登录桌面即可启动。网页和 worker 以 `kali` 用户运行，
+加载 `env.local.sh`，异常退出后自动重启。服务文件位于 `scripts/systemd/`，其中的
+用户名和项目绝对路径需在迁移机器时调整。
+
+```bash
+sudo install -m 644 scripts/systemd/aperisolve*.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now redis-server.service aperisolve-worker.service aperisolve.service
+systemctl status aperisolve.service aperisolve-worker.service redis-server.service
+sudo journalctl -u aperisolve.service -u aperisolve-worker.service -f
+```
+
+首次切换前先退出手动启动的网页和 worker，避免端口冲突或重复 worker。
+使用 systemd 后，通过下面的命令管理项目，不再使用 `start.sh` / `stop.sh`：
+
+```bash
+sudo systemctl restart aperisolve.service                 # 重启网页，保留深度分析任务进程
+sudo systemctl restart aperisolve-worker.service          # 重启分析 worker
+sudo systemctl stop aperisolve.service aperisolve-worker.service
+sudo systemctl disable aperisolve.service aperisolve-worker.service  # 取消项目自启
+```
+
+停止网页服务不会停止已启动的深度分析任务；可在网页任务记录中单独停止它们。
+systemd 模式的日志由 journal 管理；`logs/` 中的日志对应手动启动模式。
+
 ## 深度分析（Grok CLI）
 
 首页勾选“深度分析”，可一次上传多个任意类型文件，并填写解题说明，例如
@@ -117,7 +145,7 @@ local use is not.
 |---|---|---|
 | `postgres` service, `psycopg2-binary` | SQLite at `./aperisolve.db` | Avoids standing up a DB server; `models.py` uses no Postgres-specific types |
 | `redis` service | localhost `redis-server` on 6379 | Worker and rate limiter both need it; `start.sh` launches it |
-| `MAX_CONTENT_LENGTH=1 MB` | 16 MB | The 1 MB cap returns HTTP 413 *before* any analyzer runs, which rejects most CTF images |
+| Upload request size | No application-level cap | Reverse proxies or hosting platforms may still impose their own request limits |
 
 `psycopg2-binary` is intentionally not installed — SQLite makes it dead weight.
 

@@ -4,23 +4,25 @@ import base64
 import hashlib
 import json
 import os
+import secrets
 import shutil
+import subprocess
 import time
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from io import BytesIO
-from urllib.parse import quote_from_bytes
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import quote_from_bytes
 
 import sentry_sdk
 from flask import Flask, Response, abort, jsonify, redirect, render_template, request, send_file
 from flask_babel import Babel, get_locale
 from flask_babel import gettext as _
+from PIL import Image as PillowImage
 from redis import Redis
 from redis.exceptions import RedisError
 from rq import Queue
-from PIL import Image as PillowImage
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from werkzeug.wrappers.response import Response as WerkzeugResponse
 
@@ -33,7 +35,6 @@ from .config import (
     GOOGLE_ADS_TXT,
     IMAGE_EXTENSIONS,
     JOB_TIMEOUT,
-    MAX_CONTENT_LENGTH,
     PROJECT_VERSION,
     REDIS_URL,
     REMOVAL_MIN_AGE_SECONDS,
@@ -73,7 +74,6 @@ def _configure_app(app: Flask) -> None:
     app.config["PROJECT_VERSION"] = PROJECT_VERSION
     app.config["SQLALCHEMY_DATABASE_URI"] = DB_URI
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-    app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
     app.config["REDIS_QUEUE"] = Queue(connection=Redis.from_url(REDIS_URL))
     app.config["TOOL_ORDER"] = tool_order()
     # Static asset URLs are cache-busted with ?v=<PROJECT_VERSION> in templates.
@@ -116,8 +116,9 @@ def _delete_submission_entities(
     original_image_path: Path,
 ) -> None:
     """Delete submission and related image entity if applicable."""
+    remaining_submissions = Submission.query.filter_by(image_hash=image.hash).count()
     db.session.delete(submission)
-    if len(image.submissions) <= 1:
+    if remaining_submissions <= 1:
         if original_image_path.exists():
             original_image_path.unlink()
         db.session.delete(image)
@@ -181,7 +182,6 @@ def _register_error_handlers(app: Flask) -> None:
             "upload",
             {
                 "content_length": request.content_length,
-                "max_allowed": app.config["MAX_CONTENT_LENGTH"],
             },
         )
         sentry_sdk.capture_message("Upload failed: 413 Payload Too Large", level="warning")
@@ -208,7 +208,7 @@ def _register_page_routes(app: Flask) -> None:
 
     @app.route("/<string(length=32):hash_val>", methods=["GET"])
     def result_page(hash_val: str) -> str:
-        """Render the result page for a given submission hash (32-hex md5)."""
+        """Render the result page for a 32-character submission identifier."""
         submission = Submission.query.get_or_404(hash_val)
         Image.query.get_or_404(submission.image_hash)
         return render_template("result.html", hash_val=hash_val)
@@ -386,13 +386,9 @@ def _upload_image(app: Flask) -> tuple[Response, int]:
     img_hash = hashlib.md5(image_data, usedforsecurity=False).hexdigest()
     image_name = img_hash + "." + image.filename.rsplit(".", maxsplit=1)[-1].lower()
 
-    submission_data = (
-        image_data
-        + image.filename.encode()
-        + (password.encode() if password else b"")
-        + (b"deep_analysis" if deep_analysis else b"")
-    )
-    submission_hash = hashlib.md5(submission_data, usedforsecurity=False).hexdigest()
+    # A submission is an upload event, not a content-addressed result. Give
+    # every upload its own identifier so identical files always get analyzed.
+    submission_hash = secrets.token_urlsafe(24)
     submission_path = RESULT_FOLDER / img_hash / submission_hash
 
     client_ip = get_client_ip()
@@ -408,10 +404,6 @@ def _upload_image(app: Flask) -> tuple[Response, int]:
     db.session.add(upload_log)
     db.session.commit()
 
-    submission = Submission.query.filter_by(hash=submission_hash).first()
-    if submission_path.exists() and submission is not None:
-        return jsonify({"submission_hash": submission.hash}), 200
-
     new_img_path = RESULT_FOLDER / img_hash / image_name
     if not new_img_path.exists():
         new_img_path.parent.mkdir(parents=True, exist_ok=True)
@@ -425,26 +417,16 @@ def _upload_image(app: Flask) -> tuple[Response, int]:
     db.session.commit()
 
     submission_path.mkdir(parents=True, exist_ok=True)
-    if not submission:
-        submission = Submission(
-            filename=image.filename,
-            password=password,
-            deep_analysis=deep_analysis,
-            hash=submission_hash,
-            status="pending",
-            date=time.time(),
-            image_hash=sub_img.hash,
-        )
-        db.session.add(submission)
-        try:
-            db.session.commit()
-        except IntegrityError:
-            # A concurrent identical upload won the insert race; use its row.
-            db.session.rollback()
-            submission = Submission.query.filter_by(hash=submission_hash).one()
-
-    submission_any = cast("Any", submission)
-    submission_any.status = "pending"
+    submission = Submission(
+        filename=image.filename,
+        password=password,
+        deep_analysis=deep_analysis,
+        hash=submission_hash,
+        status="pending",
+        date=time.time(),
+        image_hash=sub_img.hash,
+    )
+    db.session.add(submission)
     db.session.commit()
 
     app.config["REDIS_QUEUE"].enqueue(
@@ -567,9 +549,50 @@ def _build_result_response(result_path: Path) -> Response | tuple[Response, int]
         response.headers["Cache-Control"] = "no-store"
         return response, 425
 
+    etag_data = raw
+    foremost_result = results.get("foremost") if isinstance(results, dict) else None
+    archive_path = result_path.parent / "foremost.7z"
+    if (
+        isinstance(foremost_result, dict)
+        and foremost_result.get("status") == "ok"
+        and "files" not in foremost_result
+        and archive_path.is_file()
+    ):
+        seven_zip = shutil.which("7z")
+        try:
+            listing = (
+                subprocess.run(  # noqa: S603 - fixed argv; archive path is generated locally
+                    [seven_zip, "l", "-slt", str(archive_path)],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                if seven_zip
+                else None
+            )
+        except (OSError, subprocess.SubprocessError):
+            listing = None
+        if listing is not None:
+            files = []
+            for record in listing.stdout.split("\n\n"):
+                fields = dict(
+                    line.split(" = ", 1)
+                    for line in record.splitlines()
+                    if " = " in line
+                )
+                path = fields.get("Path")
+                attributes = fields.get("Attributes", "")
+                is_directory = fields.get("Folder") == "+" or attributes.startswith("D ")
+                if path and path != str(archive_path) and not is_directory:
+                    files.append(path)
+            if files:
+                foremost_result["files"] = files
+                etag_data = raw + b"\0" + json.dumps(files, ensure_ascii=False).encode()
+
     response = jsonify({"results": results})
     response.headers["Cache-Control"] = "no-cache"
-    response.set_etag(hashlib.md5(raw, usedforsecurity=False).hexdigest())
+    response.set_etag(hashlib.md5(etag_data, usedforsecurity=False).hexdigest())
     return cast("Response", response.make_conditional(request))
 
 
@@ -921,36 +944,6 @@ def _register_management_routes(app: Flask) -> None:
         submission = Submission.query.get_or_404(hash_val)
         image = Image.query.get_or_404(submission.image_hash)
 
-        age_seconds = time.time() - submission.date
-        if age_seconds < REMOVAL_MIN_AGE_SECONDS:
-            return (
-                jsonify(
-                    {
-                        "error": _(
-                            "Image must be at least %(min)d seconds old. Current age: %(age)ds",
-                            min=REMOVAL_MIN_AGE_SECONDS,
-                            age=int(age_seconds),
-                        ),
-                    },
-                ),
-                403,
-            )
-
-        upload_logs = UploadLog.query.filter_by(image_hash=image.hash).all()
-        unique_ips = _extract_unique_ips(upload_logs)
-        if len(unique_ips) > 1:
-            return (
-                jsonify(
-                    {
-                        "error": _(
-                            "Image uploaded from multiple IP addresses. Removal is not allowed.",
-                        ),
-                        "ip_count": len(unique_ips),
-                    },
-                ),
-                403,
-            )
-
         original_image_path = Path(image.file)
         try:
             _archive_original_image(original_image_path, image.hash, submission.hash)
@@ -958,6 +951,7 @@ def _register_management_routes(app: Flask) -> None:
             _delete_submission_entities(submission, image, original_image_path)
         except (OSError, SQLAlchemyError) as exc:
             db.session.rollback()
+            app.logger.exception("Failed to remove image submission %s", hash_val)
             sentry_sdk.capture_exception(exc)
             return jsonify({"error": _("Failed to remove image")}), 500
 
