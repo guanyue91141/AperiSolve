@@ -28,15 +28,12 @@
 {% endblock %}
 {% block body_content %}
 <form id="upload-form" class="card p-4 mb-4" method="POST" enctype="multipart/form-data">
-  <div class="form-check mb-3">
-    <input class="form-check-input" type="checkbox" id="omni-mode">
-    <label class="form-check-label" for="omni-mode">ALL mode</label>
-  </div>
   <!-- Drop Zone -->
   <div class="mb-3">
     <label for="image" class="form-label visually-hidden">{{ _("File") }}</label>
     <div id="drop-zone" class="drop-zone border border-2 border-dashed rounded-3 p-4 text-center">
-      <p id="drag-msg" class="mb-3">{{ _("📂 Drag and drop a file here or click to select") }}</p>
+      <p id="drag-msg" class="mb-2" role="status" aria-live="polite">{{ _("📂 Drag and drop or paste a file here, or click to select") }}</p>
+      <p class="small text-muted mb-3">{{ _("Paste copied files or screenshots with Ctrl+V / ⌘+V.") }}</p>
       <input type="file" id="image" name="image" class="visually-hidden" required>
       {# No aria-label: the visible text is the accessible name. An aria-label
          would override it, and voice-control users say what they see. #}
@@ -64,14 +61,11 @@
     <input class="form-control" type="text" name="password" id="password" placeholder="{{ _('Enter password if required') }}">
   </div>
 
-  <!-- Deep Analysis Toggle -->
-  <div class="form-check form-switch mb-4">
-    <input class="form-check-input" type="checkbox" role="switch" id="deep">
-    <label class="form-check-label" for="deep">
-      {{ _("Deep analysis") }} <small class="text-muted">{{ _("(slower, more thorough)") }}</small>
-    </label>
   </div>
-
+  <!-- Deep analysis launches the full analysis workflow. -->
+  <div class="form-check form-switch mb-4">
+    <input class="form-check-input" type="checkbox" role="switch" id="omni-mode">
+    <label class="form-check-label" for="omni-mode">{{ _("Deep analysis") }}</label>
   </div>
   <!-- Submit Button -->
   <button type="submit" class="btn btn-primary btn-lg w-100">
@@ -109,6 +103,6 @@
 </dialog>
 {% endblock %}
 {% block footer_content %}
-<link href="/static/css/omni.css?v={{ config['PROJECT_VERSION'] }}-omni-5" rel="stylesheet">
-<script src="/static/js/omni.js?v={{ config['PROJECT_VERSION'] }}-omni-10"></script>
+<link href="/static/css/omni.css?v={{ config['PROJECT_VERSION'] }}-omni-sidebar-20261030-3" rel="stylesheet">
+<script src="/static/js/omni.js?v={{ config['PROJECT_VERSION'] }}-omni-paste-20261102"></script>
 {% endblock %}

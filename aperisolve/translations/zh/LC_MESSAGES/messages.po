@@ -306,6 +306,14 @@ msgstr "文件"
 msgid "📂 Drag and drop a file here or click to select"
 msgstr "📂 将文件拖放到此处，或点击选择"
 
+#: aperisolve/templates/index.html
+msgid "📂 Drag and drop or paste a file here, or click to select"
+msgstr "📂 拖放或粘贴文件到此处，或点击选择"
+
+#: aperisolve/templates/index.html
+msgid "Paste copied files or screenshots with Ctrl+V / ⌘+V."
+msgstr "复制文件或截图后，按 Ctrl+V / ⌘+V 直接粘贴。"
+
 #: aperisolve/templates/index.html:45
 msgid "Choose a file"
 msgstr "选择一个文件"

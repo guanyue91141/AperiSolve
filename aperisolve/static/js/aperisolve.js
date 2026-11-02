@@ -1620,7 +1620,7 @@ async function pollStatus(submission_hash, startedAt, interval, submittedKeyword
 }
 
 /**
- * Drag and drop functionality
+ * File selection, drag and drop, and clipboard paste
  */
 
 const dropZone = document.getElementById("drop-zone");
@@ -1632,6 +1632,18 @@ function showFilename(filename) {
   dragMsg.textContent = "📄 " + (fileInput.files.length
     ? Array.from(fileInput.files, (file) => file.name).join(" · ")
     : filename);
+}
+
+function selectUploadFiles(files) {
+  if (!files.length || fileInput.disabled || window.OmniUI?.busy()) return;
+  if (!fileInput.multiple && files.length > 1) {
+    showDanger("普通模式仅支持单文件；请勾选深度分析后上传多个文件。", true);
+    return;
+  }
+  const transfer = new DataTransfer();
+  for (const file of files) transfer.items.add(file);
+  fileInput.files = transfer.files;
+  fileInput.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
 if (browseBtn) {
@@ -1663,21 +1675,32 @@ if (browseBtn) {
     dropZone.addEventListener(eventName, (e) => {
       e.preventDefault();
       dropZone.classList.remove("dragover");
+      dropZone.style.boxShadow = "";
     });
   });
 
   // Drop file
   dropZone.addEventListener("drop", (e) => {
-    const files = e.dataTransfer.files;
-    if (window.OmniUI?.busy()) return;
-    if (!window.OmniUI?.enabled() && files.length > 1) {
-      showDanger("普通模式仅支持单文件；请勾选全能模式后上传多个文件。", true);
-      return;
+    selectUploadFiles(e.dataTransfer.files);
+  });
+
+  // Clipboard files include copied files and screenshot image blobs. Leave
+  // text-only paste alone so all form fields keep their native paste behavior.
+  document.addEventListener("paste", (e) => {
+    const form = document.getElementById("upload-form");
+    if (!form.getClientRects().length || fileInput.disabled || window.OmniUI?.busy()) return;
+    const clipboard = e.clipboardData;
+    if (!clipboard) return;
+    let files = Array.from(clipboard.files || []);
+    if (!files.length) {
+      files = Array.from(clipboard.items || [])
+        .filter((item) => item.kind === "file")
+        .map((item) => item.getAsFile())
+        .filter(Boolean);
     }
-    if (files.length > 0) {
-      fileInput.files = files; // Attach files to the hidden input
-      showFilename(fileInput.files[0].name);
-    }
+    if (!files.length) return;
+    e.preventDefault();
+    selectUploadFiles(files);
   });
 
   fileInput.addEventListener("change", () => {
@@ -1700,7 +1723,6 @@ if (browseBtn) {
 
       const fileInput = document.getElementById("image");
       const passwordInput = document.getElementById("password");
-      const deepCheckbox = document.getElementById("deep");
       const keywordInput = document.getElementById("keyword");
       const progressContainer = document.getElementById("progress-container");
       const progressBar = document.getElementById("progress-bar");
@@ -1713,7 +1735,6 @@ if (browseBtn) {
       const formData = new FormData();
       formData.append("image", fileInput.files[0]);
       formData.append("password", passwordInput.value);
-      formData.append("deep", deepCheckbox.checked);
       const keyword = keywordInput?.value.trim() || "";
       const xhr = new XMLHttpRequest();
       xhr.open("POST", "/upload", true);

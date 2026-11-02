@@ -53,7 +53,7 @@
     document.getElementById("omni-instructions-group").hidden = !mode.checked;
     if (!mode.checked && input.files.length > 1) input.value = "";
     if (!input.files.length) dragMessage.textContent = mode.checked
-      ? "📂 文件可选：拖放多个文件到这里"
+      ? "📂 文件可选：拖放或粘贴多个文件到这里"
       : initialDragMessage;
     submit.innerHTML = mode.checked ? '<i class="fa fa-play me-2" aria-hidden="true"></i>创建任务' : initialSubmit;
     browse.innerHTML = mode.checked ? '<i class="fa fa-folder-open me-2" aria-hidden="true"></i>选择多个文件' : initialBrowse;
@@ -307,7 +307,7 @@
       const result = await json(`${api()}?page=${page}`);
       if (!dialog.open || current !== generation) return;
       taskTotal = result.total;
-      setText(historyMessage, result.total ? "" : "暂无全能任务，请在首页勾选 ALL mode 后提交。");
+      setText(historyMessage, result.total ? "" : "暂无深度分析任务，请在首页勾选“深度分析”后提交。");
       const ids = new Set(result.tasks.map((task) => task.id));
       for (const [id, row] of rows) {
         if (!ids.has(id)) { row.node.remove(); rows.delete(id); }
