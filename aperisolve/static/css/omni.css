@@ -62,6 +62,16 @@
 .omni-task-body pre { white-space: pre-wrap; overflow-wrap: anywhere; color: #e1e8ef; }
 .omni-task-actions { margin: .8rem 0; }
 .omni-solver-buttons { display: flex; flex-wrap: wrap; gap: .45rem; margin: .8rem 0; }
+.omni-solver-buttons .btn[aria-pressed="true"],
+.omni-preview-buttons .btn[aria-pressed="true"] {
+  color: #08120b;
+  background: #e6f8e9;
+  border-color: #b8eac2;
+  box-shadow: 0 0 0 .15rem rgb(126 203 143 / 35%);
+  font-weight: 700;
+}
+.omni-solver-buttons .btn[aria-pressed="false"],
+.omni-preview-buttons .btn[aria-pressed="false"] { filter: brightness(.82); }
 .omni-preview {
   background: #080d13;
   border: 1px solid #35414d;

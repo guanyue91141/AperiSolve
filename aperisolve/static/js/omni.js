@@ -138,9 +138,9 @@
       <button type="button" class="btn btn-outline-danger omni-stop">停止当前分支</button>
       <div class="omni-solver-buttons" role="group" aria-label="切换解题分支"></div>
       <div class="omni-preview-buttons" role="group" aria-label="当前分支文件">
-        <button type="button" class="btn btn-outline-light omni-preview-button" data-file="log" aria-pressed="true">进度日志</button>
-        <button type="button" class="btn btn-outline-light omni-preview-button" data-file="solution.txt" aria-pressed="false">解题结果</button>
-        <button type="button" class="btn btn-outline-light omni-preview-button" data-file="prompt.txt" aria-pressed="false">提示词</button>
+        <button type="button" class="btn btn-outline-light omni-preview-button" data-file="log" aria-pressed="true">进度</button>
+        <button type="button" class="btn btn-outline-light omni-preview-button" data-file="solution.txt" aria-pressed="false">教程</button>
+        <button type="button" class="btn btn-outline-light omni-preview-button" data-file="prompt.txt" aria-pressed="false">TXT</button>
         <button type="button" class="btn btn-outline-light omni-preview-button" data-file="flag-re.txt" aria-pressed="false">flag</button>
       </div></div>
       <p class="omni-preview-note text-muted small" role="status"></p><pre class="omni-preview" tabindex="0"></pre></div>`;
@@ -213,10 +213,16 @@
         });
         row.solverButtonNodes.set(solver.id, button);
       }
-      button.classList.toggle("btn-primary", solver.id === row.selectedSolver);
-      button.classList.toggle("btn-outline-light", solver.id !== row.selectedSolver);
-      button.textContent = `${solver.name} · ${statuses[solver.status] || solver.status}`;
-      button.setAttribute("aria-pressed", String(solver.id === row.selectedSolver));
+      const selected = solver.id === row.selectedSolver;
+      const shortName = solver.id === "grok" ? "G"
+        : solver.id.startsWith("pi-") ? "P"
+          : solver.id === "codex" ? "C" : solver.name;
+      const label = `${shortName} · ${statuses[solver.status] || solver.status}`;
+      button.classList.toggle("omni-solver-selected", selected);
+      button.textContent = label;
+      button.title = `${solver.name} · ${statuses[solver.status] || solver.status}`;
+      button.setAttribute("aria-label", `${solver.name} · ${statuses[solver.status] || solver.status}`);
+      button.setAttribute("aria-pressed", String(selected));
       row.solverButtons.append(button);
     }
     for (const [solverId, button] of row.solverButtonNodes) {
