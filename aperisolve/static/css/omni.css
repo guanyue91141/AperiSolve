@@ -61,6 +61,18 @@
 .omni-task-body { border-top: 1px solid #35414d; padding: 1rem; }
 .omni-task-body pre { white-space: pre-wrap; overflow-wrap: anywhere; color: #e1e8ef; }
 .omni-task-actions { margin: .8rem 0; }
+.omni-task .omni-stop {
+  color: #fff;
+  background-color: #c62828;
+  background-image: linear-gradient(180deg, #e34b4b, #b71c1c);
+  box-shadow: 0 0.125rem 0.5rem rgb(198 40 40 / 25%);
+}
+.omni-task .omni-stop:hover {
+  color: #fff;
+  background-color: #b71c1c;
+  background-image: linear-gradient(180deg, #d83d3d, #a31616);
+  filter: brightness(1.06);
+}
 .omni-solver-buttons { display: flex; flex-wrap: wrap; gap: .45rem; margin: .8rem 0; }
 .omni-solver-buttons .btn[aria-pressed="true"],
 .omni-preview-buttons .btn[aria-pressed="true"] {

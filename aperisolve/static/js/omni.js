@@ -135,9 +135,8 @@
       <span class="omni-task-flag-group"><code class="omni-task-flag"></code></span>
       <div class="omni-task-body" hidden>
       <p class="omni-task-error" role="status"></p><div class="omni-task-actions">
-      <button type="button" class="btn btn-outline-danger omni-stop">停止当前分支</button>
       <div class="omni-solver-buttons" role="group" aria-label="切换解题分支"></div>
-      <div class="omni-preview-buttons" role="group" aria-label="当前分支文件">
+      <div class="omni-preview-buttons" role="group" aria-label="当前分支文件与操作">
         <button type="button" class="btn btn-outline-light omni-preview-button" data-file="log" aria-pressed="true">进度</button>
         <button type="button" class="btn btn-outline-light omni-preview-button" data-file="solution.txt" aria-pressed="false">教程</button>
         <button type="button" class="btn btn-outline-light omni-preview-button" data-file="prompt.txt" aria-pressed="false">TXT</button>
@@ -147,9 +146,32 @@
     const row = {node, task, selected: "grok.log.txt", selectedFile: "log", selectedSolver: "grok", expanded: false, loading: false, previewVersion: 0, solverButtonNodes: new Map()};
     row.output = node.querySelector(".omni-preview");
     row.note = node.querySelector(".omni-preview-note");
-    row.stop = node.querySelector(".omni-stop");
     const body = node.querySelector(".omni-task-body");
     row.solverButtons = node.querySelector(".omni-solver-buttons");
+    row.previewButtons = node.querySelector(".omni-preview-buttons");
+    row.stop = document.createElement("button");
+    row.stop.type = "button";
+    row.stop.className = "btn btn-sm btn-danger omni-stop";
+    row.stop.addEventListener("click", async () => {
+      const solverId = row.selectedSolver;
+      const solver = row.task.solvers?.find((item) => item.id === solverId);
+      if (!solver || !active.has(solver.status)) return;
+      if (!window.confirm(`确定停止“${solver.name || solverId}”分支吗？其他分支会继续运行。`)) return;
+      row.stop.disabled = true;
+      row.stop.textContent = "正在停止…";
+      try {
+        const result = await json(api(row.task.id, `stop/${encodeURIComponent(solverId)}`), {method: "POST"});
+        updateRow(row, result);
+        await loadDetails(row);
+      } catch (error) {
+        row.node.querySelector(".omni-task-error").textContent = error.message;
+      } finally {
+        row.stop.disabled = false;
+        const selectedSolver = row.task.solvers?.find((item) => item.id === row.selectedSolver);
+        row.stop.textContent = `停止 ${selectedSolver?.name || "当前分支"}`;
+      }
+    });
+    row.previewButtons.append(row.stop);
     const expand = node.querySelector(".omni-expand");
     expand.addEventListener("click", () => {
       row.expanded = !row.expanded;
@@ -168,19 +190,6 @@
       });
       loadPreview(row);
     }));
-    row.stop.addEventListener("click", async () => {
-      const solver = row.task.solvers?.find((item) => item.id === row.selectedSolver);
-      if (!window.confirm(`确定只停止当前观察的“${solver?.name || row.selectedSolver}”分支吗？其他分支会继续运行。`)) return;
-      row.stop.disabled = true;
-      row.stop.textContent = "正在停止…";
-      try {
-        const result = await json(api(task.id, `stop/${encodeURIComponent(row.selectedSolver)}`), {method: "POST"});
-        updateRow(row, result);
-        await loadDetails(row);
-      } catch (error) {
-        row.node.querySelector(".omni-task-error").textContent = error.message;
-      } finally { row.stop.disabled = false; row.stop.textContent = "停止任务"; }
-    });
     return row;
   }
   function setText(node, value) {
@@ -224,6 +233,7 @@
       button.setAttribute("aria-label", `${solver.name} · ${statuses[solver.status] || solver.status}`);
       button.setAttribute("aria-pressed", String(selected));
       row.solverButtons.append(button);
+
     }
     for (const [solverId, button] of row.solverButtonNodes) {
       if (!solvers.some((solver) => solver.id === solverId)) {
@@ -234,6 +244,7 @@
     const selectedSolver = solvers.find((solver) => solver.id === row.selectedSolver);
     row.stop.hidden = !active.has(selectedSolver?.status);
     row.stop.textContent = `停止 ${selectedSolver?.name || "当前分支"}`;
+    row.stop.setAttribute("aria-label", `停止 ${selectedSolver?.name || "当前分支"} 分支`);
     row.node.querySelectorAll(".omni-preview-button").forEach((button) => {
       button.setAttribute("aria-pressed", String(button.dataset.file === row.selectedFile));
     });
