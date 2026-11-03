@@ -11,12 +11,14 @@ one of the first tools to try on any PNG steganography challenge.
 ## What Aperi'Solve runs
 
 ```console
-$ zsteg image.png
+$ zsteg -a -o ALL image.png
 ```
 
-Without extra flags, zsteg scans the most common bit/channel combinations
-and prints anything that looks like text, a known file signature or a high
-entropy region.
+The `-a` option tries all known bit/channel methods, while `-o ALL` checks
+every pixel iteration order. This matters especially for BMP: zsteg's default
+`auto` order checks only `bY` and `xY`, so a payload in ordinary `xy` order
+can otherwise be missed. Aperi'Solve uses both options and reports anything
+that looks like text, a known file signature or a high-entropy region.
 
 ## Reading the output
 
@@ -40,7 +42,7 @@ signatures.
 ## Useful local flags
 
 ```console
-$ zsteg -a image.png        # try ALL known combinations (slow, thorough)
+$ zsteg -a -o ALL image.png # try all methods and pixel orders (slow, thorough)
 $ zsteg -E "b1,rgb,lsb,xy" image.png > payload.bin   # extract one payload
 $ zsteg --lsb image.png     # only LSB combinations
 ```

@@ -15,7 +15,10 @@ class ZstegAnalyzer(SubprocessAnalyzer):
     def __init__(self, input_img: Path, output_dir: Path) -> None:
         """Initialize the zsteg analyzer."""
         super().__init__(input_img, output_dir)
-        self.cmd = ["zsteg", self.img]
+        # zsteg's default BMP order is ``auto`` (bY and xY), which skips
+        # ordinary row-major ``xy`` payloads. Ask it to scan every known
+        # method and pixel order so common RGB LSB flags are not missed.
+        self.cmd = ["zsteg", "-a", "-o", "ALL", self.img]
 
     def is_error(self, returncode: int, stdout: str, stderr: str, *, zip_exist: bool) -> bool:
         """Check whether zsteg reported an error.
