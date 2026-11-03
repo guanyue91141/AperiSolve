@@ -742,7 +742,7 @@ def test_records_paginate_and_home_has_no_detail_navigation(
     assert 'id="omni-history"' in home
     script = client.get("/static/js/omni.js").get_data(as_text=True)
     assert "omni-solver-buttons" in script
-    assert "stop/${encodeURIComponent(row.selectedSolver)}" in script
+    assert "stop/${encodeURIComponent(solverId)}" in script
     assert "任务记录" in home
     assert client.get(f"/omni/tasks/{ids[0]}").status_code == 404
 

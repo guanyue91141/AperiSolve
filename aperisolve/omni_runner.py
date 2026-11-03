@@ -85,7 +85,7 @@ def _stream_output(child: subprocess.Popen, task: Path, session_id: str, log: Te
             log.write(output)
             log.flush()
             if time.monotonic() - last_log_event >= LOG_EVENT_INTERVAL:
-                publish_event(task.name, "log_changed")
+                publish_event(task.name, "log_changed", solver="grok")
                 last_log_event = time.monotonic()
         child.stdout.close()
     return confirmed
@@ -144,7 +144,7 @@ def _finish_task(task: Path, exit_code: int, *, session_confirmed: bool) -> None
         _update_overall(state)
         write_state(task, state)
     publish_event(task.name, "task_changed")
-    publish_event(task.name, "log_changed")
+    publish_event(task.name, "log_changed", solver="grok")
 
 
 def _update_overall(state: dict) -> None:
@@ -274,6 +274,7 @@ def _run_pi(task: Path, solver_id: str) -> None:  # noqa: C901, PLR0912, PLR0915
             write_state(task, state)
         publish_event(task.name, "task_changed")
         log_path = workspace / "log.txt"
+        last_log_event = time.monotonic()
         with log_path.open("a", encoding="utf-8", buffering=1) as log:
             log.write(f"{label} 启动，工作目录：{workspace}\n")
             if child.stdout is not None:
@@ -301,9 +302,12 @@ def _run_pi(task: Path, solver_id: str) -> None:  # noqa: C901, PLR0912, PLR0915
                     if text:
                         log.write(text)
                         log.flush()
-                        publish_event(task.name, "log_changed")
+                        if time.monotonic() - last_log_event >= LOG_EVENT_INTERVAL:
+                            publish_event(task.name, "log_changed", solver=solver_id)
+                            last_log_event = time.monotonic()
                 child.stdout.close()
             exit_code = child.wait()
+        publish_event(task.name, "log_changed", solver=solver_id)
         signal_group(identity, signal.SIGKILL)
         flag_path = workspace / "flag-re.txt"
         has_flag = flag_path.is_file() and flag_path.stat().st_size > 0
@@ -386,7 +390,7 @@ def _run_grok(root: Path, task_id: str) -> None:
                 + "\n",
             )
             log.flush()
-            publish_event(task_id, "log_changed")
+            publish_event(task_id, "log_changed", solver="grok")
             session_confirmed = _stream_output(child, task, lease.session_id, log)
             exit_code = child.wait()
             # Do not leave tool grandchildren running after the agent has exited.
@@ -412,7 +416,7 @@ def _run_grok(root: Path, task_id: str) -> None:
                 _update_overall(state)
                 write_state(task, state)
         publish_event(task_id, "task_changed")
-        publish_event(task_id, "log_changed")
+        publish_event(task_id, "log_changed", solver="grok")
     finally:
         if lease is not None:
             lease.close()

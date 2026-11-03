@@ -143,7 +143,7 @@
         <button type="button" class="btn btn-outline-light omni-preview-button" data-file="flag-re.txt" aria-pressed="false">flag</button>
       </div></div>
       <p class="omni-preview-note text-muted small" role="status"></p><pre class="omni-preview" tabindex="0"></pre></div>`;
-    const row = {node, task, selected: "grok.log.txt", selectedFile: "log", selectedSolver: "grok", expanded: false, loading: false, previewVersion: 0, solverButtonNodes: new Map()};
+    const row = {node, task, selected: "grok.log.txt", selectedFile: "log", selectedSolver: "grok", expanded: false, loading: false, previewVersion: 0, previewTimer: null, previewInFlight: false, previewDirty: false, previewDeferred: false, renderedPreview: null, solverButtonNodes: new Map()};
     row.output = node.querySelector(".omni-preview");
     row.note = node.querySelector(".omni-preview-note");
     const body = node.querySelector(".omni-task-body");
@@ -206,7 +206,7 @@
     setText(row.node.querySelector(".omni-task-error"), task.error || "");
     const solvers = task.solvers || [];
     if (!solvers.some((solver) => solver.id === row.selectedSolver)) row.selectedSolver = "grok";
-    for (const solver of solvers) {
+    for (const [index, solver] of solvers.entries()) {
       let button = row.solverButtonNodes.get(solver.id);
       if (!button) {
         button = document.createElement("button");
@@ -228,12 +228,13 @@
           : solver.id === "codex" ? "C" : solver.name;
       const label = `${shortName} · ${statuses[solver.status] || solver.status}`;
       button.classList.toggle("omni-solver-selected", selected);
-      button.textContent = label;
+      setText(button, label);
       button.title = `${solver.name} · ${statuses[solver.status] || solver.status}`;
       button.setAttribute("aria-label", `${solver.name} · ${statuses[solver.status] || solver.status}`);
       button.setAttribute("aria-pressed", String(selected));
-      row.solverButtons.append(button);
-
+      if (row.solverButtons.children[index] !== button) {
+        row.solverButtons.insertBefore(button, row.solverButtons.children[index] || null);
+      }
     }
     for (const [solverId, button] of row.solverButtonNodes) {
       if (!solvers.some((solver) => solver.id === solverId)) {
@@ -243,26 +244,56 @@
     }
     const selectedSolver = solvers.find((solver) => solver.id === row.selectedSolver);
     row.stop.hidden = !active.has(selectedSolver?.status);
-    row.stop.textContent = `停止 ${selectedSolver?.name || "当前分支"}`;
+    setText(row.stop, `停止 ${selectedSolver?.name || "当前分支"}`);
     row.stop.setAttribute("aria-label", `停止 ${selectedSolver?.name || "当前分支"} 分支`);
     row.node.querySelectorAll(".omni-preview-button").forEach((button) => {
       button.setAttribute("aria-pressed", String(button.dataset.file === row.selectedFile));
     });
   }
-  async function loadPreview(row) {
+  function previewHasSelection(row) {
+    const selection = window.getSelection();
+    return selection && !selection.isCollapsed &&
+      (row.output.contains(selection.anchorNode) || row.output.contains(selection.focusNode));
+  }
+  async function loadPreview(row, {background = false} = {}) {
     const path = row.selected;
     if (!path) return;
+    const solver = row.selectedSolver;
+    const key = `${solver}:${path}`;
     const version = ++row.previewVersion;
-    row.output.textContent = "正在读取…";
+    if (!background) {
+      row.previewDeferred = false;
+      row.renderedPreview = null;
+      row.output.textContent = "正在读取…";
+    }
     try {
-      const data = await json(fileUrl(row.task.id, "text", path, path === "grok.log.txt" || path === "log.txt", row.selectedSolver));
+      const data = await json(fileUrl(row.task.id, "text", path, path === "grok.log.txt" || path === "log.txt", solver));
       if (version !== row.previewVersion || sidebar.hidden || !row.expanded) return;
-      const atEnd = row.output.scrollTop + row.output.clientHeight >= row.output.scrollHeight - 30;
-      row.output.textContent = data.text || (path === "flag-re.txt" ? "（空）" : "（内容为空，运行中任务会自动更新）");
-      row.note.textContent = data.truncated ? "内容超过 256 KiB，仅预览" + (data.tail ? "末尾" : "开头") + "部分。" : "";
-      if (atEnd && path === "grok.log.txt") row.output.scrollTop = row.output.scrollHeight;
+      const text = data.text || (path === "flag-re.txt" ? "（空）" : "（内容为空，运行中任务会自动更新）");
+      const previous = row.output.textContent;
+      const canAppend = row.renderedPreview === key && data.text && text.startsWith(previous) &&
+        row.output.childNodes.length === 1 && row.output.firstChild.nodeType === Node.TEXT_NODE;
+      if (background && previous !== text && !canAppend && previewHasSelection(row)) {
+        row.previewDeferred = true;
+        return;
+      }
+      const scrollTop = row.output.scrollTop;
+      const atEnd = scrollTop + row.output.clientHeight >= row.output.scrollHeight - 30;
+      if (previous !== text) {
+        if (canAppend) row.output.firstChild.appendData(text.slice(previous.length));
+        else row.output.textContent = text;
+        if (row.selectedFile === "log" && (!background || atEnd)) row.output.scrollTop = row.output.scrollHeight;
+        else row.output.scrollTop = scrollTop;
+      }
+      row.renderedPreview = key;
+      row.previewDeferred = false;
+      setText(row.note, data.truncated ? "内容超过 256 KiB，仅预览" + (data.tail ? "末尾" : "开头") + "部分。" : "");
     } catch (error) {
       if (version !== row.previewVersion || sidebar.hidden || !row.expanded) return;
+      if (background) {
+        setText(row.note, `预览暂不可用：${error.message}`);
+        return;
+      }
       if (path === "flag-re.txt" && error.message.includes("404")) {
         row.output.textContent = "（空）";
         row.note.textContent = "";
@@ -274,6 +305,24 @@
         row.note.textContent = `预览暂不可用：${error.message}`;
       }
     }
+  }
+  function schedulePreview(row) {
+    row.previewDirty = true;
+    if (row.previewTimer || row.previewInFlight) return;
+    row.previewTimer = setTimeout(async () => {
+      row.previewTimer = null;
+      if (sidebar.hidden || !row.expanded || row.selectedFile !== "log" || !row.node.isConnected) {
+        row.previewDirty = false;
+        return;
+      }
+      row.previewDirty = false;
+      row.previewInFlight = true;
+      try { await loadPreview(row, {background: true}); }
+      finally {
+        row.previewInFlight = false;
+        if (row.previewDirty) schedulePreview(row);
+      }
+    }, 300);
   }
   async function loadDetails(row) {
     if (row.loading) return;
@@ -328,8 +377,9 @@
     const row = rows.get(event.task_id);
     if (!row) return;
     if (event.type === "task_changed") loadTask(event.task_id);
-    if (event.type === "log_changed" && row.expanded && row.selectedFile === "log") {
-      loadPreview(row);
+    if (event.type === "log_changed" && row.expanded && row.selectedFile === "log" &&
+        (!event.solver || event.solver === row.selectedSolver)) {
+      schedulePreview(row);
     }
   }
   function connectSocket() {
@@ -403,6 +453,11 @@
     if (event.key === "Escape" && !sidebar.hidden && !event.defaultPrevented) {
       event.preventDefault();
       setHistoryOpen(false);
+    }
+  });
+  document.addEventListener("selectionchange", () => {
+    for (const row of rows.values()) {
+      if (row.previewDeferred && !previewHasSelection(row)) schedulePreview(row);
     }
   });
   previous.addEventListener("click", () => { page--; generation++; refresh(); });
